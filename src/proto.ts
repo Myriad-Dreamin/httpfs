@@ -2,35 +2,35 @@ import {Readable} from 'stream';
 import {Volume} from 'memfs/lib/volume';
 
 export interface UrlReadAction {
-    read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number;
+  read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number;
 }
 
 export interface UrlReadStreamAction {
-    createReadStream(): Readable;
+  createReadStream(): Readable;
 }
 
 export interface UrlWriteAction {
-    write(buf: Buffer, off?: number, len?: number, pos?: number): number;
+  write(buf: Buffer, off?: number, len?: number, pos?: number): number;
 }
 
 interface HttpFileInfoBase {
-    name?: string;
-    mTime?: number;
-    size?: number;
+  name?: string;
+  mTime?: number;
+  size?: number;
 }
 
 export interface HttpFileInfo extends HttpFileInfoBase {
-    type: 'file';
+  type: 'file';
 }
 
 export interface HttpDirInfo extends HttpFileInfoBase {
-    type: 'dir';
+  type: 'dir';
 }
 
 export type IHttpDirent = HttpFileInfo | HttpDirInfo;
 
 export interface UrlLoadRemoteAction {
-    loadRemote(): Promise<IHttpDirent>;
+  loadRemote(): Promise<IHttpDirent>;
 }
 
 export class HttpFsError extends Error {
@@ -47,5 +47,5 @@ type fsDirReadAction = 'readdirSync' | 'readdir';
 // mkdirSync mkdir mkdirpSync mkdirp rmdirSync rmdir
 type fsAction = fsBasicAction | fsReadAction | fsWriteAction | fsStatAction | fsDirReadAction;
 export type HttpVolumeApi = Pick<Volume, fsAction> & {
-    loadRemote(): Promise<void>;
+  loadRemote(): Promise<void>;
 };

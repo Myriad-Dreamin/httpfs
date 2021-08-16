@@ -20,6 +20,7 @@ yarn add @myriaddreamin/httpfs
 + stating any http response by
   + `createHttpVolume('http://url').[lstat, stat]('/')`
   + or `createHttpVolume('https://url').[lstat, stat]('/')`
++ the link primitives are implemented in local memory (not persistent).
 
 
 ## Supported Api
@@ -72,13 +73,13 @@ yarn add @myriaddreamin/httpfs
 ```typescript
 import {createAndLoadHttpVolume, createHttpVolume} from '@myriaddreamin/httpfs';
 
-async function example1(): Promise<void> {
+async function example_create_volume(): Promise<void> {
   // root not loaded
   const volume = createHttpVolume('http://www.baidu.com/');
   expect(volume).toBeDefined();
 }
 
-async function example1Async(): Promise<void> {
+async function example_create_volume_async(): Promise<void> {
   // root loaded
   const volume = await createAndLoadHttpVolume('http://www.baidu.com/');
   expect(volume).toBeDefined();
@@ -90,7 +91,7 @@ async function example1Async(): Promise<void> {
 createReadStream for base url `volume.createReadStream('/') === ReadStream('http://www.baidu.com/')`
 
 ```typescript
-async function example2(): Promise<void> {
+async function example_read_root_file(): Promise<void> {
   // root not loaded
   const volume = createHttpVolume('http://www.baidu.com/');
   expect(volume).toBeDefined();
@@ -105,7 +106,7 @@ createReadStream for files in
 subdirectory `volume.createReadStream(filePath) === ReadStream(path.join('http://0.0.0.0:8000/', filePath))`
 
 ```typescript
-async function example3(): Promise<void> {
+async function example_read_subfiles(): Promise<void> {
   // some http file server
   const volume = await createHttpVolume('http://0.0.0.0:8000/');
   expect(volume).toBeDefined();
@@ -133,6 +134,19 @@ async function example3(): Promise<void> {
 }
 ```
 
+### Error Handling
+
+```typescript
+async function example_error_handling(): Promise<void> {
+  const volume = await createAndLoadHttpVolume('http://0.0.0.0:8000/');
+  expect(volume).toBeDefined();
+
+  expect(() => {
+    volume.readdirSync('/Dir1');
+  }).toThrow(HttpFsError);
+}
+```
+
 ### Notice
 
 `loadRemote` method is needed before calling the synchronous apis (with method name ending with `Sync`).
@@ -142,3 +156,67 @@ for example `httpfs.readFile` and `httpfs.promises.readFile` are asynchronous ap
 ### More API
 
 all the apis are compatible with `import * as fs from 'fs'` or `const fs = require('fs')`
+
+### Develop a new http drive
+
+#### Register your http drive (by dns domain)
+
+```typescript
+
+async function example_register_drive_by_domain(): Promise<void> {
+  class MyUrlAction implements SomeHttpAction {}
+  GenericUrlAction.registerByDomain('www.example.com', MyUrlAction);
+}
+```
+
+#### Register your http drive (override)
+
+```typescript
+
+async function example_register_drive_overrided(): Promise<void> {
+  class MyUrlAction implements SomeHttpAction {}
+  class MyHttpVolume extends HttpVolume {
+    createRootAction(url: URL): HttpFsURLAction {
+      return new MyUrlAction(url);
+    }
+  }
+}
+```
+
+#### Implement a http drive which has special file serving method
+
+```typescript
+class GotUrlAction implements UrlReadStreamAction {
+  constructor(protected url: URL) {
+  }
+
+  createReadStream(): Readable {
+    return got.stream(this.url);
+  }
+}
+```
+
+#### Implement a http drive which has directory structure
+
+```typescript
+class SimpleHttpUrlAction extends GotUrlAction implements UrlLoadRemoteAction {
+  constructor(url: URL) {
+    super(url);
+  }
+
+  async loadRemote(): Promise<IHttpDirent> {
+    // return File Dirent or Dir Dirent
+    return this.handlePythonServer(await got.get(this.url));
+  }
+}
+```
+
+#### Full list of all HttpUrlAction interface
+
++ `UrlLoadRemoteAction` is mapped to filesystem api `fs.readdir`, `fs.stat*`.
++ `UrlMkdirAction` is mapped to filesystem api `fs.mkdir`, `fs.mkdirp`.
++ `UrlFileModeAction` is mapped to filesystem api `fs.chmod`, `fs.chown`.
++ `UrlReadAction` is mapped to filesystem api `fs.read*`.
++ `UrlWriteAction` is mapped to filesystem api `fs.write*`, `fs.access`, `fs.truncate`, `fs.append*`.
++ `UrlReadStreamAction` is mapped to filesystem api `fs.createReadStream`.
++ `UrlWriteStreamAction` is mapped to filesystem api `fs.createWriteStream`.

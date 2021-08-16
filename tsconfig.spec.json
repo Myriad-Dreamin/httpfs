@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/test",
+    "module": "commonjs",
+    "sourceMap": true,
+    "declaration": true,
+    "incremental": true,
+    "moduleResolution": "node",
+    "target": "es6"
+  },
+  "include": [
+    "src/**/*.spec.ts",
+    "test/**/*.spec.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

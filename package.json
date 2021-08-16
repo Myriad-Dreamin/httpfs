@@ -1,0 +1,47 @@
+{
+  "name": "httpfs",
+  "version": "1.0.0",
+  "dependencies": {
+    "memfs": "^3.2.2",
+    "got": "^11.8.2",
+    "https-proxy-agent": "^5.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^4.3.5",
+    "@types/node": "^16.6.1",
+    "@types/jest": "^26.0.15",
+    "jest": "^26.6.3",
+    "ts-jest": "^26.4.3"
+  },
+  "jest": {
+    "globals": {
+      "ts-jest": {
+        "//tsconfig": "https://huafu.github.io/ts-jest/user/config/",
+        "tsconfig": "./tsconfig.spec.json"
+      }
+    },
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "@/(.*)": "<rootDir>/src/$1",
+      "@config/(.*)": "<rootDir>/src/config/$1",
+      "@lib/(.*)": "<rootDir>/src/lib/$1",
+      "@proto/(.*)": "<rootDir>/src/proto/$1"
+    },
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "roots": [
+      "src"
+    ],
+    "transform": {
+      "(src|test)[\\\\/].+\\.[jt]s$": "ts-jest"
+    },
+    "testRegex": ".*\\.spec\\.ts$",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.(t|j)s"
+    ]
+  }
+}

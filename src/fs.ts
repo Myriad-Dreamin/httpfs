@@ -7,7 +7,7 @@ import {HttpFsError, HttpFsURLAction, HttpVolumeApi, IHttpDirent} from './proto'
 import {GenericUrlAction} from './action.generic';
 
 function mask(urlAction: HttpFsURLAction, perm: number) {
-  if (!urlAction.read) {
+  if (!(urlAction.read || urlAction.createReadStream)) {
     perm &= ~0o444;
   }
   if (!urlAction.write) {

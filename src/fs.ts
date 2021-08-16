@@ -300,7 +300,7 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
       Link: HttpLinkNode,
     });
     this.url = url;
-    this.root.setAction(new GenericUrlAction(new URL(this.url)));
+    this.root.setAction(this.createRootAction(new URL(this.url)));
 
     const a = super['wrapAsync'];
     (super['wrapAsync'] as unknown as any) = (method: (...args: any[]) => any, args: any[], callback: (...args: any[]) => any) => {
@@ -344,6 +344,10 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
 
   adaptAction(action: HttpFsURLAction): HttpFsURLAction {
     return adaptAction(action);
+  }
+
+  createRootAction(url: URL): HttpFsURLAction {
+    return new GenericUrlAction(url);
   }
 
   createNode(isDirectory?: boolean, perm?: number): HttpFsNode {

@@ -1,19 +1,10 @@
-import {IReadStream, IReadStreamOptions, TCallback, TFlags, TMode, Volume} from 'memfs/lib/volume';
+import {IReadStream, IReadStreamOptions, pathToSteps, TCallback, TFlags, TMode, Volume} from 'memfs/lib/volume';
 import {Link, Node} from 'memfs/lib/node';
 import {URL} from 'url';
-import got from 'got';
 import {PathLike} from 'fs';
 import {PassThrough, Readable} from 'stream';
-import * as path from 'path';
-import {
-  HttpFsError,
-  HttpVolumeApi,
-  IHttpDirent,
-  UrlLoadRemoteAction,
-  UrlReadAction,
-  UrlReadStreamAction,
-  UrlWriteAction
-} from './proto';
+import {HttpFsError, HttpFsURLAction, HttpVolumeApi, IHttpDirent} from './proto';
+import {GenericUrlAction} from './action.generic';
 
 function mask(urlAction: HttpFsURLAction, perm: number) {
   if (!urlAction.read) {
@@ -27,14 +18,14 @@ function mask(urlAction: HttpFsURLAction, perm: number) {
 
 const key = (type: string, id: string | number) => `httpfs.${type}.${id}`;
 
-export type HttpFsURLAction = Partial<UrlReadAction & UrlWriteAction & UrlReadStreamAction> & UrlLoadRemoteAction;
-
 class HttpFsNode extends Node {
   private _key: string;
   protected rawPerm: number;
   protected urlAction: HttpFsURLAction;
   protected isReadOnly: string;
   protected size: number;
+  context: any;
+  loaded: boolean;
 
   constructor(ino: number, perm: number = 0o666) {
     const action = {
@@ -64,6 +55,10 @@ class HttpFsNode extends Node {
 
   setSize(size: number): void {
     this.size = size;
+  }
+
+  setLoaded(loaded: boolean): void {
+    this.loaded = loaded;
   }
 
   getSize(): number {
@@ -105,6 +100,7 @@ class HttpFsNode extends Node {
 
 class HttpLinkNode extends Link {
   node: HttpFsNode;
+  vol: HttpVolume;
   private _key: string;
   loaded: boolean;
 
@@ -119,7 +115,38 @@ class HttpLinkNode extends Link {
 
   setAction(action: HttpFsURLAction) {
     this.node.setAction(action);
-    this.loaded = true;
+  }
+
+  // noinspection DuplicatedCode
+  walk(steps: string[], stop?: number, i?: number): HttpLinkNode | null {
+    if (!this.loaded) {
+      throw new HttpFsError('not loaded link node under synchronized environment');
+    }
+    if (stop === undefined) { stop = steps.length; }
+    if (i === undefined) { i = 0; }
+    if (i >= steps.length || i >= stop)
+      return this;
+    let step = steps[i];
+    let link = this.getChild(step) as HttpLinkNode | null;
+    if (!link)
+      return link;
+    return link.walk(steps, stop, i + 1);
+  }
+
+  // noinspection DuplicatedCode
+  async walkAsync(steps: string[], stop?: number, i?: number): Promise<HttpLinkNode | null> {
+    if (!this.loaded) {
+      return this.loadRemote().then(() => this.walkAsync(steps, stop, i));
+    }
+    if (stop === undefined) { stop = steps.length; }
+    if (i === undefined) { i = 0; }
+    if (i >= steps.length || i >= stop)
+      return this;
+    let step = steps[i];
+    let link = this.getChild(step) as HttpLinkNode | null;
+    if (!link)
+      return link;
+    return link.walkAsync(steps, stop, i + 1);
   }
 
   get Key(): string {
@@ -127,17 +154,43 @@ class HttpLinkNode extends Link {
     return this._key;
   }
 
-  async loadRemote(): Promise<IHttpDirent> {
-    const remote = await this.node.loadRemote();
+  async loadRemote(remote?: IHttpDirent): Promise<IHttpDirent> {
+    if (this.loaded && this.node.loaded) {
+      return undefined;
+    }
+    remote = remote || await this.node.loadRemote();
     if (remote.mTime) {
       this.node.ctime = this.node.mtime = new Date(remote.mTime);
     }
     this.node.setSize(remote.size || 0);
+    this.node.setLoaded(this.loaded = remote.loaded);
+    this.node.setAction(adaptAction(remote.action));
 
     switch (remote?.type) {
       case 'dir':
         this.node.setIsDirectory();
-        throw new HttpFsError('not implemented');
+        if (remote.loaded) {
+          for (const ch of Object.keys(this.children)) {
+            this.deleteChild(this.children[ch]);
+          }
+          const promises = [];
+          for (const ch of remote.children) {
+            const d = this.vol.createNode(ch.type === 'dir', 0o644) as HttpFsNode;
+            const l = this.vol.createLink() as HttpLinkNode;
+            l.setNode(d);
+            this.setChild(ch.name, l);
+            l.steps = this.steps.concat([ch.name]);
+            if (ch.loaded) {
+              promises.push(l.loadRemote(ch));
+            } else {
+              d.setAction(adaptAction(ch.action));
+            }
+          }
+          if (promises.length) {
+            await Promise.all(promises);
+          }
+        }
+        break;
       case 'file':
         this.node.setIsFile();
         if (remote.name) {
@@ -228,83 +281,6 @@ class HttpReadStream extends PassThrough {
   }
 }
 
-class GenericUrlAction implements UrlReadStreamAction, UrlLoadRemoteAction {
-
-  constructor(protected url: URL) {
-  }
-
-  async loadRemote(): Promise<IHttpDirent> {
-    const res = await got.head(this.url, {
-      headers: {
-        // 'Accept-Encoding': 'gzip, deflate',
-      }
-    });
-    const lastModified = res.headers['last-modified'];
-    let mTime: number | undefined;
-    if (lastModified) {
-      mTime = Date.parse(lastModified);
-    }
-    const contentLength = res.headers['content-length'];
-    let sz: number | undefined;
-    if (contentLength) {
-      sz = Number.parseInt(contentLength);
-    }
-
-    const contentType = res.headers['content-type'];
-    if (!contentType) {
-      return {
-        type: 'file',
-        mTime,
-        size: sz,
-      };
-    }
-    if (contentType.startsWith('text')) {
-      return {
-        type: 'file',
-        mTime,
-        size: sz,
-      };
-    }
-
-    throw new HttpFsError('not implemented');
-  }
-
-  createReadStream(): Readable {
-    return got.stream(this.url, {
-      isStream: true,
-      // autoClose: true,
-    });
-  }
-
-  // read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number {
-  //   return 0;
-  // }
-
-  // convert(url: string): Promise<[false, FileLike<Partial<IUrlFileX>>]> {
-  //   return Promise.resolve([false, {
-  //     stat() {
-  //       return Promise.resolve({name: uuidGen()});
-  //     },
-  //     open() {
-  //       return Promise.resolve(got.stream(url, {
-  //         agent: {
-  //           http: new HttpsProxyAgent('http://127.0.0.1:10809'),
-  //           https: new HttpsProxyAgent('http://127.0.0.1:10809'),
-  //         }
-  //       }));
-  //     }
-  //   }]);
-  // }
-
-}
-
-function genericUrlAction(url: URL, childPath: string) {
-  if (childPath) {
-    url.pathname = path.join(url.pathname, childPath);
-  }
-  return new GenericUrlAction(url);
-}
-
 function adaptAction(action: HttpFsURLAction): HttpFsURLAction {
   return action;
 }
@@ -324,24 +300,54 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
       Link: HttpLinkNode,
     });
     this.url = url;
+    this.root.setAction(new GenericUrlAction(new URL(this.url)));
+
+    const a = super['wrapAsync'];
+    (super['wrapAsync'] as unknown as any) = (method: (...args: any[]) => any, args: any[], callback: (...args: any[]) => any) => {
+      switch (method) {
+        case this['openBase']:
+        case this['readFileBase']:
+        case this['writeFileBase']:
+        case this['appendFileBase']:
+        case this['accessBase']:
+        case this['truncateBase']:
+        case this['statBase']:
+        case this['lstatBase']:
+        case this['readdirBase']:
+          const steps = pathToSteps(args[0]);
+          for (let i = 0; i < steps.length; i++) {
+          }
+          return this.root.walkAsync(steps).then(() => {
+            return new Promise((resolve, reject) => {
+              return a.call(this, method, args, (err, ...args) => {
+                if (err) {
+                  // todo: handle
+                  callback(err, ...args);
+                  reject(err);
+                } else {
+                  callback(err, ...args);
+                  resolve(args);
+                }
+              });
+            }).catch(callback);
+          }).catch(callback);
+      }
+      return a.call(this, method, args, callback);
+    }
+
+    // type fsAsyncAction = 'open' | 'readFile' | 'writeFile' | 'appendFile' | 'access' | 'truncate' | 'stat' | 'lstat' | 'readdir';
   }
 
   getLink(steps: string[]): Link | null {
     return super.getLink(steps);
   }
 
-  createAction(url: URL, childPath?: string): HttpFsURLAction {
-    return genericUrlAction(url, childPath);
+  adaptAction(action: HttpFsURLAction): HttpFsURLAction {
+    return adaptAction(action);
   }
 
   createNode(isDirectory?: boolean, perm?: number): HttpFsNode {
     return super.createNode(isDirectory, perm) as HttpFsNode;
-  }
-
-  ensureRootAction(): void {
-    if (!this.root.loaded) {
-      this.root.setAction(adaptAction(this.createAction(new URL(this.url))));
-    }
   }
 
   getResolvedLink(filenameOrSteps: string | string[]): Link | null {
@@ -349,7 +355,6 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
       throw new HttpFsError('not implemented');
     }
 
-    this.ensureRootAction();
     return this.root.walk(filenameOrSteps);
   }
 
@@ -364,7 +369,6 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   }
 
   async loadRemote(): Promise<void> {
-    this.ensureRootAction();
     await this.root.loadRemote();
   }
 }

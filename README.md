@@ -159,6 +159,9 @@ for example `httpfs.readFile` and `httpfs.promises.readFile` are asynchronous ap
 
 all the apis are compatible with `import * as fs from 'fs'` or `const fs = require('fs')`
 
++ [Node.js 文件系统文档](http://nodejs.cn/api/fs.html)
++ [Node.js fs Documentatin](https://nodejs.org/api/fs.html)
+
 ### Develop a new http drive
 
 #### Register your http drive (by dns domain)

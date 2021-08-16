@@ -164,7 +164,7 @@ class HttpLinkNode extends Link {
     }
     this.node.setSize(remote.size || 0);
     this.node.setLoaded(this.loaded = remote.loaded);
-    this.node.setAction(adaptAction(remote.action));
+    this.node.setAction(this.vol.adaptAction(remote.action));
 
     switch (remote?.type) {
       case 'dir':
@@ -183,7 +183,7 @@ class HttpLinkNode extends Link {
             if (ch.loaded) {
               promises.push(l.loadRemote(ch));
             } else {
-              d.setAction(adaptAction(ch.action));
+              d.setAction(this.vol.adaptAction(ch.action));
             }
           }
           if (promises.length) {

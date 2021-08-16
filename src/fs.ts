@@ -120,7 +120,7 @@ class HttpLinkNode extends Link {
   // noinspection DuplicatedCode
   walk(steps: string[], stop?: number, i?: number): HttpLinkNode | null {
     if (!this.loaded) {
-      throw new HttpFsError('not loaded link node under synchronized environment');
+      throw new HttpFsError('not loaded link node under synchronous environment');
     }
     if (stop === undefined) { stop = steps.length; }
     if (i === undefined) { i = 0; }

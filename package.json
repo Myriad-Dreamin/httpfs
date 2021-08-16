@@ -1,6 +1,9 @@
 {
   "name": "httpfs",
   "version": "1.0.0",
+  "scripts": {
+    "do-publish": "node scripts/prepublish.js && npm publish --access public dist"
+  },
   "dependencies": {
     "memfs": "^3.2.2",
     "got": "^11.8.2",

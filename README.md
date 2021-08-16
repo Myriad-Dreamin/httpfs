@@ -4,7 +4,7 @@
 ## Install
 
 ```bash
-npm install httpfs
+npm install @myriaddreamin/httpfs
 # by yarn
-yarn add httpfs
+yarn add @myriaddreamin/httpfs
 ```

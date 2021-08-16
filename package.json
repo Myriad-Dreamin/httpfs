@@ -1,5 +1,5 @@
 {
-  "name": "httpfs",
+  "name": "@myriaddreamin/httpfs",
   "version": "1.0.0",
   "scripts": {
     "do-publish": "node scripts/prepublish.js && npm publish --access public dist"

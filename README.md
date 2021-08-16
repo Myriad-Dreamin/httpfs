@@ -14,10 +14,13 @@ yarn add @myriaddreamin/httpfs
 + `Google Drive`
 + `Onedrive`
 + `Python SimpleHTTP Server`
-+ creating any http stream is available by `createHttpVolume('http://url').createReadStream('/')`
-  or `createHttpVolume('https://url').createReadStream('/')`
-+ stating any http file is available by `createHttpVolume('http://url').[lstat, stat]('/')`
-  or `createHttpVolume('https://url').[lstat, stat]('/')`
++ creating any http stream by
+  + `createHttpVolume('http://url').createReadStream('/')`
+  + or `createHttpVolume('https://url').createReadStream('/')`
++ stating any http response by
+  + `createHttpVolume('http://url').[lstat, stat]('/')`
+  + or `createHttpVolume('https://url').[lstat, stat]('/')`
+
 
 ## Supported Api
 

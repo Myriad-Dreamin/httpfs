@@ -1,9 +1,11 @@
 # httpfs
 
+[![][npm-badge]][npm-url]
+
 ## Install
 
 ```bash
-npm install @myriaddreamin/httpfs
+npm install [--save] @myriaddreamin/httpfs
 # by yarn
 yarn add @myriaddreamin/httpfs
 ```
@@ -220,3 +222,6 @@ class SimpleHttpUrlAction extends GotUrlAction implements UrlLoadRemoteAction {
 + `UrlWriteAction` is mapped to filesystem api `fs.write*`, `fs.access`, `fs.truncate`, `fs.append*`.
 + `UrlReadStreamAction` is mapped to filesystem api `fs.createReadStream`.
 + `UrlWriteStreamAction` is mapped to filesystem api `fs.createWriteStream`.
+
+[npm-url]: https://www.npmjs.com/package/@myriaddreamin/httpfs
+[npm-badge]: https://img.shields.io/npm/v/@myriaddreamin/httpfs.svg

@@ -1,9 +1,10 @@
 import {URL} from 'url';
+import * as stream from 'stream';
 import {Readable} from 'stream';
 import HttpsProxyAgent from 'https-proxy-agent/dist/agent';
 import got, * as GotLib from 'got';
 import {RequestError} from 'got';
-import * as stream from 'stream';
+import {HttpFsError} from '../../proto';
 
 const mega = require('megajs');
 
@@ -39,7 +40,7 @@ export enum MegaAsyncErrno {
   EBlocked = -16,
 }
 
-export class MegaAsyncError extends Error {
+export class MegaAsyncError extends HttpFsError {
   rawCause?: Error;
   socketCode: string;
   httpCode: number;
@@ -261,14 +262,13 @@ export class HttpFsMegaUtils {
 // }
 
 
-
-  static async gotMegaDownload(file: any, options: {
+  static gotMegaDownload(file: any, options: {
     start?: number;
     returnCiphertext?: boolean;
     end?: number;
     maxConnections?: number;
     forceHttps?: boolean;
-  }): Promise<Readable> {
+  }): Readable {
 
     if (!options) options = {};
     const start = options.start || 0;
@@ -294,10 +294,10 @@ export class HttpFsMegaUtils {
       req.p = file.downloadId;
     }
 
-    if (file.directory) throw Error('Can\'t download: folder download isn\'t supported'); // If options.returnCiphertext is true then the ciphertext is returned.
+    if (file.directory) throw new HttpFsError('Can\'t download: folder download isn\'t supported'); // If options.returnCiphertext is true then the ciphertext is returned.
     // The result can be decrypted later using mega.decrypt() stream
 
-    if (!file.key && !options.returnCiphertext) throw Error('Can\'t download: key isn\'t defined');
+    if (!file.key && !options.returnCiphertext) throw new HttpFsError('Can\'t download: key isn\'t defined');
     const decryptStream = file.key && !options.returnCiphertext ? mega.decrypt(file.key, {
       start: apiStart,
       disableVerification: apiStart !== 0 || end !== null
@@ -316,76 +316,55 @@ export class HttpFsMegaUtils {
       stream$$1.emit('error', new MegaAsyncError('Connection error: ' + err.message, err));
     }
 
-    try {
-      let response: GotLib.Response<[MegaFileResponse]>;
-      try {
-        response = await HttpFsMegaUtils.gotMegaReq<[MegaFileResponse]>(file.api, _querystring, [req]);
-      } catch (err) {
+    HttpFsMegaUtils.gotMegaReq<[MegaFileResponse]>(file.api, _querystring, [req])
+      .then((response: GotLib.Response<[MegaFileResponse]>) => {
+        const body = response.body[0];
+        if (typeof body === 'number') {
+          stream$$1.emit('error', MegaAsyncError.errBody(`Response Error (${body as number}): ${Errors[-body]}`, body, response));
+          return;
+        }
+
+        if (typeof body.g !== 'string' || body.g.substr(0, 4) !== 'http') {
+          stream$$1.emit('error', Error('MEGA servers returned an invalid body, maybe caused by rate limit'));
+          return;
+        }
+
+        if (!end) end = body.s - 1;
+        if (start > end) {
+          stream$$1.emit('error', Error('You can\'t download past the end of the file.'));
+          return;
+        }
+
+        if (maxConnections === 1) {
+          const r = got.stream(`${body.g}/${apiStart}-${end}`, {
+            agent: {
+              http: new HttpsProxyAgent('http://127.0.0.1:10809'),
+              https: new HttpsProxyAgent('http://127.0.0.1:10809'),
+            }
+          });
+          r.on('error', handleConnectionErrors);
+          r.on('response', handleMegaErrors);
+          r.pipe(decryptStream); // Abort stream if required
+
+          stream$$1.on('close', () => {
+            r.destroy();
+          });
+
+          r.on('downloadProgress', (progress) => {
+            stream$$1.emit('downloadProgress', progress);
+          });
+        } else {
+          console.error('...');
+          return;
+        }
+      })
+      .catch((err) => {
         if (err instanceof GotLib.RequestError) {
           stream$$1.emit('error', new MegaAsyncError('Connection error: ' + err.message, err));
-          return stream$$1;
+        } else {
+          stream$$1.emit('error', err);
         }
-        stream$$1.emit('error', err);
-        return stream$$1;
-      }
-
-      // httpStream.on('response', (resp: GotLib.Response) => {
-      //   const b =  ;
-      //
-      // })
-
-      const body = response.body[0];
-      if (typeof body === 'number') {
-        stream$$1.emit('error', MegaAsyncError.errBody(`Response Error (${body as number}): ${Errors[-body]}`, body, response));
-        return stream$$1;
-      }
-
-      if (typeof body.g !== 'string' || body.g.substr(0, 4) !== 'http') {
-        stream$$1.emit('error', Error('MEGA servers returned an invalid body, maybe caused by rate limit'));
-        return stream$$1;
-      }
-
-      if (!end) end = body.s - 1;
-      if (start > end) {
-        stream$$1.emit('error', Error('You can\'t download past the end of the file.'));
-        return stream$$1;
-      }
-
-      if (maxConnections === 1) {
-        const r = got.stream(`${body.g}/${apiStart}-${end}`, {
-          agent: {
-            http: new HttpsProxyAgent('http://127.0.0.1:10809'),
-            https: new HttpsProxyAgent('http://127.0.0.1:10809'),
-          }
-        });
-        r.on('error', handleConnectionErrors);
-        r.on('response', handleMegaErrors);
-        r.pipe(decryptStream); // Abort stream if required
-
-        stream$$1.on('close', () => {
-          r.destroy();
-        });
-
-        r.on('downloadProgress', (progress) => {
-          stream$$1.emit('downloadProgress', progress);
-        });
-      } else {
-        console.error('...');
-        return undefined;
-      }
-
-      // let i = 0;
-      //
-      // stream$$1.on('data', d => {
-      //   i += d.length;
-      //   stream$$1.emit('progress', {
-      //     bytesLoaded: i,
-      //     bytesTotal: body.s
-      //   });
-      // });
-    } catch (err) {
-      stream$$1.emit('error', err);
-    }
+      });
     return stream$$1;
   }
 }

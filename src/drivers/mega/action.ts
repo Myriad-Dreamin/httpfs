@@ -1,10 +1,18 @@
 import {URL} from 'url';
-import {HttpDirInfo, HttpFileInfo, HttpFsError, IHttpDirent, UrlLoadRemoteAction} from '../../proto';
+import {
+  HttpDirInfo,
+  HttpFileInfo,
+  HttpFsError,
+  IHttpDirent,
+  UrlLoadRemoteAction,
+  UrlReadStreamAction
+} from '../../proto';
 import {HttpFsMegaUtils, MegaAsyncError} from './client';
+import {Readable} from 'stream';
 
 const mega = require('megajs');
 
-export class MegaUrlAction implements UrlLoadRemoteAction {
+export class MegaUrlAction implements UrlLoadRemoteAction, UrlReadStreamAction {
 
   constructor(protected url: URL, protected childPath?: string, protected fileHandler: any = undefined) {
     if (!fileHandler) {
@@ -13,6 +21,13 @@ export class MegaUrlAction implements UrlLoadRemoteAction {
       }
       this.fileHandler = mega.file(this.url.toString());
     }
+  }
+
+  createReadStream(): Readable {
+    return HttpFsMegaUtils.gotMegaDownload(this.fileHandler, {
+      maxConnections: 1,
+      forceHttps: true,
+    });
   }
 
   loadRemote(): Promise<IHttpDirent> {
@@ -52,18 +67,6 @@ export class MegaUrlAction implements UrlLoadRemoteAction {
       dirContainer.children.push(this.toHttpFsDirent(subNode, dirCur + <string>subNode.name + '/'))
     }
     return dirContainer;
-    // dirContainer[dirCur.substr(0, dirCur.length - 1)] =
-    //   {
-    //     stat() {
-    //       return Promise.resolve({name: <string>fileNode.name});
-    //     },
-    //     open() {
-    //       return Promise.resolve(HttpFsMegaUtils.gotMegaDownload(fileNode, {
-    //         maxConnections: 1,
-    //         forceHttps: true,
-    //       }));
-    //     }
-    //   };
   }
 
   protected toHttpFsDir(fileHandler: any, cp?: string): HttpDirInfo {

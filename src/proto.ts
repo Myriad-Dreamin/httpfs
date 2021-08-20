@@ -15,6 +15,7 @@ export interface UrlWriteAction {
 
 interface HttpFileInfoBase {
   name?: string;
+  cTime?: number;
   mTime?: number;
   size?: number;
   action: HttpFsURLAction;

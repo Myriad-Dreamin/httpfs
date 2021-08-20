@@ -162,6 +162,10 @@ class HttpLinkNode extends Link {
     if (remote.mTime) {
       this.node.ctime = this.node.mtime = new Date(remote.mTime);
     }
+    if (remote.cTime) {
+      this.node.ctime = new Date(remote.cTime);
+      this.node.mtime = this.node.mtime || this.node.ctime;
+    }
     this.node.setSize(remote.size || 0);
     this.node.setLoaded(this.loaded = remote.loaded);
     this.node.setAction(this.vol.adaptAction(remote.action));

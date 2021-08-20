@@ -38,9 +38,10 @@
     "do-publish": "yarn run build && node scripts/prepublish.js && npm publish --access public dist"
   },
   "dependencies": {
-    "memfs": "^3.2.2",
     "got": "^11.8.2",
-    "https-proxy-agent": "^5.0.0"
+    "https-proxy-agent": "^5.0.0",
+    "megajs": "^0.17.2",
+    "memfs": "^3.2.2"
   },
   "devDependencies": {
     "@types/jest": "^26.0.15",

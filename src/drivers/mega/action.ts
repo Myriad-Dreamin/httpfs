@@ -64,7 +64,7 @@ export class MegaUrlAction implements UrlLoadRemoteAction, UrlReadStreamAction {
 
     if (!fileNode.children) return;
     for (const subNode of fileNode.children) {
-      dirContainer.children.push(this.toHttpFsDirent(subNode, dirCur + <string>subNode.name + '/'))
+      dirContainer.children.push(this.toHttpFsDirent(subNode, dirCur + <string>subNode.name + '/'));
     }
     return dirContainer;
   }

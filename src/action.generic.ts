@@ -1,29 +1,9 @@
-import {
-  HttpDirInfo,
-  HttpFileInfo,
-  HttpFsError,
-  HttpNDirInfo,
-  IHttpDirent,
-  UrlLoadRemoteAction,
-  UrlReadStreamAction
-} from './proto';
+import {HttpFsError, IHttpDirent, UrlLoadRemoteAction, UrlReadStreamAction} from './proto';
 import {URL} from 'url';
 import got, * as GotLib from 'got';
-import {Readable} from 'stream';
+import {GotUrlAction} from './drivers/generic/rs.got';
 
 const hrefExtractReg = /href="((?:\\"|[^"])*)"/g;
-
-class GotUrlAction implements UrlReadStreamAction {
-  constructor(protected url: URL) {
-  }
-
-  createReadStream(): Readable {
-    return got.stream(this.url, {
-      isStream: true,
-      // autoClose: true,
-    });
-  }
-}
 
 type PartialFields<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 

@@ -105,7 +105,21 @@ export class SimpleHttpUrlAction extends GotUrlAction implements UrlReadStreamAc
 
 }
 
+type ActionClass<T> = {
+  new (url: URL): T;
+}
+
+type DomainHandler = ActionClass<UrlLoadRemoteAction> & {
+  notify?: (url: URL) => boolean;
+}
+
 export class GenericUrlAction extends GotUrlAction implements UrlLoadRemoteAction {
+  static externalHandler = new Map<string, DomainHandler>();
+
+  static registerByDomain(domain: string, actionFac: DomainHandler) {
+    GenericUrlAction.externalHandler.set(domain, actionFac);
+  }
+
   constructor(url: URL, private childPath?: string) {
     super(url);
   }
@@ -134,6 +148,11 @@ export class GenericUrlAction extends GotUrlAction implements UrlLoadRemoteActio
   }
 
   async loadRemote(): Promise<IHttpDirent> {
+    const handleClass = GenericUrlAction.externalHandler.get(this.url.hostname);
+    if (handleClass && (!handleClass.notify || handleClass.notify(this.url))) {
+      return (new handleClass(this.url)).loadRemote();
+    }
+
     const res = await got.head(this.url, {
       headers: {
         // 'Accept-Encoding': 'gzip, deflate',
@@ -151,25 +170,4 @@ export class GenericUrlAction extends GotUrlAction implements UrlLoadRemoteActio
     dirent.action = this;
     return dirent as IHttpDirent;
   }
-
-  // read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number {
-  //   return 0;
-  // }
-
-  // convert(url: string): Promise<[false, FileLike<Partial<IUrlFileX>>]> {
-  //   return Promise.resolve([false, {
-  //     stat() {
-  //       return Promise.resolve({name: uuidGen()});
-  //     },
-  //     open() {
-  //       return Promise.resolve(got.stream(url, {
-  //         agent: {
-  //           http: new HttpsProxyAgent('http://127.0.0.1:10809'),
-  //           https: new HttpsProxyAgent('http://127.0.0.1:10809'),
-  //         }
-  //       }));
-  //     }
-  //   }]);
-  // }
-
 }

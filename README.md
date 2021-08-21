@@ -73,7 +73,7 @@ yarn add @myriaddreamin/httpfs
 ### Create a Volume
 
 ```typescript
-import {createAndLoadHttpVolume, createHttpVolume} from '@myriaddreamin/httpfs';
+import {createHttpVolume} from '@myriaddreamin/httpfs';
 
 async function example_create_volume(): Promise<void> {
   // root not loaded
@@ -83,7 +83,9 @@ async function example_create_volume(): Promise<void> {
 
 async function example_create_volume_async(): Promise<void> {
   // root loaded
-  const volume = await createAndLoadHttpVolume('http://www.baidu.com/');
+  const volume = await createHttpVolume('http://www.baidu.com/', {
+    preload: true,
+  });
   expect(volume).toBeDefined();
 }
 ```
@@ -140,7 +142,9 @@ async function example_read_subfiles(): Promise<void> {
 
 ```typescript
 async function example_error_handling(): Promise<void> {
-  const volume = await createAndLoadHttpVolume('http://0.0.0.0:8000/');
+  const volume = await createHttpVolume('http://0.0.0.0:8000/', {
+    preload: true,
+  });
   expect(volume).toBeDefined();
 
   expect(() => {

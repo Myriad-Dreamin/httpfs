@@ -6,6 +6,11 @@
     "build": "tsc -p ./tsconfig.build.json",
     "do-publish": "yarn run build && node scripts/prepublish.js && npm publish --access public dist"
   },
+  "homepage": "https://github.com/Myriad-Dreamin/httpfs#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Myriad-Dreamin/httpfs.git"
+  },
   "keywords": [
     "http",
     "filesystem",

@@ -55,7 +55,7 @@ type fsBasicActionASync = 'open';
 type fsTruncateAction = 'ftruncate' | 'ftruncateSync' | 'truncate' | 'truncateSync';
 type fsWriteAction = fsBasicWriteAction | fsWriteXAction | fsTruncateAction;
 type fsStatAction = 'stat' | 'statSync' | 'fstat' | 'fstatSync' | 'lstat' | 'lstatSync';
-type fsDirReadAction = 'readdirSync' | 'readdir';
+type fsDirReadAction = 'readdirSync' | 'readdir' | 'existsSync';
 // mkdirSync mkdir mkdirpSync mkdirp rmdirSync rmdir
 type fsAction = fsBasicAction | fsReadAction | fsWriteAction | fsStatAction | fsDirReadAction;
 type fsAsyncAction =

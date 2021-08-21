@@ -24,7 +24,6 @@ yarn add @myriaddreamin/httpfs
   + or `createHttpVolume('https://url').[lstat, stat]('/')`
 + the link primitives are implemented in local memory (not persistent).
 
-
 ## Supported Api
 
 + `httpfs.open`
@@ -154,6 +153,27 @@ async function example_error_handling(): Promise<void> {
 }
 ```
 
+### Alias Root
+
+If the volume root is a file, the path `/` will maps to the file containing the page content by default (when no
+filename is given, the file path looks like `/(empty filename)`). However, it obfuscates the path naming convention. If
+you want to mount it to a different path, please use the option `rootFileAlias` when creating http volume.
+
+```typescript
+async function example_root_aliasing(): Promise<void> {
+  const volume = await createHttpVolume('http://www.baidu.com/', {
+    rootFileAlias: 'baidu.html',
+    preload: true,
+  });
+  expect(volume).toBeDefined();
+  expect(volume.existsSync('/baidu.html')).toBeTruthy();
+  expect(volume.statSync('/').isDirectory()).toBeTruthy();
+
+  const r = volume.createReadStream('/baidu.html');
+  await pipelineAsync(r, fs.createWriteStream(path.join(homedir(), 'Downloads', 'baidu2.html')));
+}
+```
+
 ### Notice
 
 `loadRemote` method is needed before calling the synchronous apis (with method name ending with `Sync`).
@@ -174,7 +194,9 @@ all the apis are compatible with `import * as fs from 'fs'` or `const fs = requi
 ```typescript
 
 async function example_register_drive_by_domain(): Promise<void> {
-  class MyUrlAction implements SomeHttpAction {}
+  class MyUrlAction implements SomeHttpAction {
+  }
+
   GenericUrlAction.registerByDomain('www.example.com', MyUrlAction);
 }
 ```
@@ -184,7 +206,9 @@ async function example_register_drive_by_domain(): Promise<void> {
 ```typescript
 
 async function example_register_drive_overrided(): Promise<void> {
-  class MyUrlAction implements SomeHttpAction {}
+  class MyUrlAction implements SomeHttpAction {
+  }
+
   class MyHttpVolume extends HttpVolume {
     createRootAction(url: URL): HttpFsURLAction {
       return new MyUrlAction(url);
@@ -232,4 +256,5 @@ class SimpleHttpUrlAction extends GotUrlAction implements UrlLoadRemoteAction {
 + `UrlWriteStreamAction` is mapped to filesystem api `fs.createWriteStream`.
 
 [npm-url]: https://www.npmjs.com/package/@myriaddreamin/httpfs
+
 [npm-badge]: https://img.shields.io/npm/v/@myriaddreamin/httpfs.svg

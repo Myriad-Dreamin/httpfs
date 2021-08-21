@@ -6,6 +6,17 @@
     "build": "tsc -p ./tsconfig.build.json",
     "do-publish": "yarn run build && node scripts/prepublish.js && npm publish --access public dist"
   },
+  "keywords": [
+    "http",
+    "filesystem",
+    "fs",
+    "drive",
+    "cloud",
+    "storage",
+    "onedrive",
+    "google drive",
+    "mega"
+  ],
   "dependencies": {
     "memfs": "^3.2.2",
     "got": "^11.8.2",

@@ -57,6 +57,7 @@ yarn add @myriaddreamin/httpfs
 + `httpfs.lstat`
 + `httpfs.lstatSync`
 + `httpfs.readdirSync`
++ `httpfs.existsSync`
 + `httpfs.promises.readdir`
 + `httpfs.promises.open`
 + `httpfs.promises.readFile`
@@ -222,7 +223,7 @@ class SimpleHttpUrlAction extends GotUrlAction implements UrlLoadRemoteAction {
 
 #### Full list of all HttpUrlAction interface
 
-+ `UrlLoadRemoteAction` is mapped to filesystem api `fs.readdir`, `fs.stat*`.
++ `UrlLoadRemoteAction` is mapped to filesystem api `fs.readdir`, `fs.existsSync`, `fs.stat*`.
 + `UrlMkdirAction` is mapped to filesystem api `fs.mkdir`, `fs.mkdirp`.
 + `UrlFileModeAction` is mapped to filesystem api `fs.chmod`, `fs.chown`.
 + `UrlReadAction` is mapped to filesystem api `fs.read*`.

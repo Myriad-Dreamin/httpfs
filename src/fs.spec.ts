@@ -1,4 +1,4 @@
-import {createAndLoadHttpVolume, createHttpVolume} from './fs';
+import {createHttpVolume} from './fs';
 import * as fs from 'fs';
 import * as path from 'path';
 import {homedir} from 'os';
@@ -31,7 +31,9 @@ describe('httpfs', function () {
   });
 
   it('stat', async () => {
-    const volume = await createAndLoadHttpVolume('http://www.baidu.com/');
+    const volume = await createHttpVolume('http://www.baidu.com/', {
+      preload: true,
+    });
     expect(volume).toBeDefined();
 
     const statRes = volume.statSync('/');
@@ -39,10 +41,10 @@ describe('httpfs', function () {
     expect(statRes.atimeMs).not.toEqual(statRes.mtimeMs);
   });
 
-  const createSimpleHttpFsVolume = async () => await createAndLoadHttpVolume('http://0.0.0.0:8000/');
+  const createSimpleHttpFsVolume = async (preload?: boolean) => await createHttpVolume('http://0.0.0.0:8000/', {preload});
 
-  it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createSimpleHttpFsVolume));
-  it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createSimpleHttpFsVolume));
+  it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createSimpleHttpFsVolume.bind(undefined, true)));
+  it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createSimpleHttpFsVolume.bind(undefined, true)));
   it('readDirSub', HttpTestSuite.get(HttpTestSuite.readDirSub, createSimpleHttpFsVolume));
   it('readDirSubDirectly', HttpTestSuite.get(HttpTestSuite.readDirSubDirectly, createSimpleHttpFsVolume));
   it('readFile1', HttpTestSuite.get(HttpTestSuite.readFile1, createSimpleHttpFsVolume));

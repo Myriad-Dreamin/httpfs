@@ -122,8 +122,12 @@ class HttpLinkNode extends Link {
     if (!this.loaded) {
       throw new HttpFsError('not loaded link node under synchronous environment');
     }
-    if (stop === undefined) { stop = steps.length; }
-    if (i === undefined) { i = 0; }
+    if (stop === undefined) {
+      stop = steps.length;
+    }
+    if (i === undefined) {
+      i = 0;
+    }
     if (i >= steps.length || i >= stop)
       return this;
     let step = steps[i];
@@ -138,8 +142,12 @@ class HttpLinkNode extends Link {
     if (!this.loaded) {
       return this.loadRemote().then(() => this.walkAsync(steps, stop, i));
     }
-    if (stop === undefined) { stop = steps.length; }
-    if (i === undefined) { i = 0; }
+    if (stop === undefined) {
+      stop = steps.length;
+    }
+    if (i === undefined) {
+      i = 0;
+    }
     if (i >= steps.length || i >= stop)
       return this;
     let step = steps[i];
@@ -381,12 +389,28 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   }
 }
 
-export function createHttpVolume(url: string): HttpVolumeApi {
-  return new HttpVolume(url);
+interface baseHttpVolumeOption {
+  preload?: boolean;
+  strictRootMode?: boolean;
 }
 
-export async function createAndLoadHttpVolume(url: string): Promise<HttpVolumeApi> {
-  const volume = createHttpVolume(url);
-  await volume.loadRemote();
+interface PreloadHttpVolumeOption extends baseHttpVolumeOption {
+  preload: true;
+}
+
+interface NPreloadHttpVolumeOption extends baseHttpVolumeOption {
+  preload: false;
+}
+
+export type HttpVolumeOption = baseHttpVolumeOption | PreloadHttpVolumeOption | NPreloadHttpVolumeOption;
+
+export function createHttpVolume(url: string, options?: baseHttpVolumeOption): HttpVolumeApi;
+export function createHttpVolume(url: string, options: PreloadHttpVolumeOption): Promise<HttpVolumeApi>;
+export function createHttpVolume(url: string, options: NPreloadHttpVolumeOption): HttpVolumeApi;
+export function createHttpVolume(url: string, options?: HttpVolumeOption): HttpVolumeApi | Promise<HttpVolumeApi> {
+  const volume = new HttpVolume(url);
+  if (options?.preload) {
+    return volume.loadRemote().then(() => volume);
+  }
   return volume;
 }

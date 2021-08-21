@@ -20,6 +20,19 @@ describe('httpfs', function () {
     await pipelineAsync(r, fs.createWriteStream(path.join(homedir(), 'Downloads', 'baidu.html')));
   });
 
+  it('createReadStreamStrict', async () => {
+    const volume = await createHttpVolume('http://www.baidu.com/', {
+      rootFileAlias: 'baidu.html',
+      preload: true,
+    });
+    expect(volume).toBeDefined();
+    expect(volume.existsSync('/baidu.html')).toBeTruthy();
+    expect(volume.statSync('/').isDirectory()).toBeTruthy();
+
+    const r = volume.createReadStream('/baidu.html');
+    await pipelineAsync(r, fs.createWriteStream(path.join(homedir(), 'Downloads', 'baidu2.html')));
+  });
+
   it('createReadStreamLoadRemote', async () => {
     const volume = createHttpVolume('http://www.baidu.com/');
     expect(volume).toBeDefined();

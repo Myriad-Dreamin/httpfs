@@ -3,7 +3,7 @@ import {Link, Node} from 'memfs/lib/node';
 import {URL} from 'url';
 import {PathLike} from 'fs';
 import {PassThrough, Readable} from 'stream';
-import {HttpFsError, HttpFsURLAction, HttpVolumeApi, IHttpDirent} from './proto';
+import {HttpDirInfo, HttpFsError, HttpFsURLAction, HttpNDirInfo, HttpVolumeApi, IHttpDirent} from './proto';
 import {GenericUrlAction} from './action.generic';
 
 function mask(urlAction: HttpFsURLAction, perm: number) {
@@ -293,7 +293,32 @@ class HttpReadStream extends PassThrough {
   }
 }
 
-function adaptAction(action: HttpFsURLAction): HttpFsURLAction {
+function isDir(d: IHttpDirent): d is (HttpDirInfo | HttpNDirInfo) {
+  return d.type === 'dir';
+}
+
+function adaptLoadRemoteAction(volume: HttpVolume, action: HttpFsURLAction, optionRootName?: string): HttpFsURLAction {
+  const l = action.loadRemote;
+  action.loadRemote = async function (): Promise<IHttpDirent> {
+    const dirent = await l.call(this);
+    if (isDir(dirent)) {
+
+      // adapt it if necessary
+      dirent.action = dirent.action.loadRemote === action.loadRemote ?
+        dirent.action : adaptLoadRemoteAction(volume, action, optionRootName);
+      return dirent;
+    }
+    if (!dirent.name) {
+      dirent.name = optionRootName || 'nameless-file';
+    }
+    return {
+      type: 'dir',
+      name: '',
+      loaded: true,
+      action,
+      children: [dirent],
+    }
+  }
   return action;
 }
 
@@ -305,13 +330,15 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
     File: Volume['props']['File'];
   }
   protected url: string;
+  protected options?: Omit<HttpVolumeOption, 'preload'>;
 
-  constructor(url: string) {
+  constructor(url: string, options?: Omit<HttpVolumeOption, 'preload'>) {
     super({
       Node: HttpFsNode,
       Link: HttpLinkNode,
     });
     this.url = url;
+    this.options = {...options};
     this.root.setAction(this.createRootAction(new URL(this.url)));
 
     const a = super['wrapAsync'];
@@ -355,11 +382,16 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   }
 
   adaptAction(action: HttpFsURLAction): HttpFsURLAction {
-    return adaptAction(action);
+    return action;
   }
 
   createRootAction(url: URL): HttpFsURLAction {
-    return new GenericUrlAction(url);
+    const g = new GenericUrlAction(url);
+    if (this.options.rootFileAlias) {
+      return adaptLoadRemoteAction(this, g,
+        typeof this.options.rootFileAlias === 'string' ? this.options.rootFileAlias : undefined);
+    }
+    return g;
   }
 
   createNode(isDirectory?: boolean, perm?: number): HttpFsNode {
@@ -391,7 +423,7 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
 
 interface baseHttpVolumeOption {
   preload?: boolean;
-  strictRootMode?: boolean;
+  rootFileAlias?: boolean | string;
 }
 
 interface PreloadHttpVolumeOption extends baseHttpVolumeOption {
@@ -408,7 +440,7 @@ export function createHttpVolume(url: string, options?: baseHttpVolumeOption): H
 export function createHttpVolume(url: string, options: PreloadHttpVolumeOption): Promise<HttpVolumeApi>;
 export function createHttpVolume(url: string, options: NPreloadHttpVolumeOption): HttpVolumeApi;
 export function createHttpVolume(url: string, options?: HttpVolumeOption): HttpVolumeApi | Promise<HttpVolumeApi> {
-  const volume = new HttpVolume(url);
+  const volume = new HttpVolume(url, options);
   if (options?.preload) {
     return volume.loadRemote().then(() => volume);
   }

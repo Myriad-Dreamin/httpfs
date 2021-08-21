@@ -1,4 +1,4 @@
-import {createAndLoadHttpVolume} from '../../fs';
+import {createHttpVolume} from '../../fs';
 import {GenericUrlAction} from '../../action.generic';
 import {MegaUrlAction} from './action';
 import {HttpTestSuite} from '../../suite.spec';
@@ -7,10 +7,10 @@ jest.setTimeout(5000000);
 describe('httpfs', function () {
   GenericUrlAction.registerByDomain('mega.nz', MegaUrlAction);
 
-  const createMegaHttpFsVolume = async () => await createAndLoadHttpVolume('https://mega.nz/folder/mphTHa7Y#tDZzOlzLE7nNIMNT5K1Hag');
+  const createMegaHttpFsVolume = async (preload?: boolean) => await createHttpVolume('https://mega.nz/folder/mphTHa7Y#tDZzOlzLE7nNIMNT5K1Hag', {preload});
 
-  it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createMegaHttpFsVolume));
-  it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createMegaHttpFsVolume));
+  it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createMegaHttpFsVolume.bind(undefined, true)));
+  it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createMegaHttpFsVolume.bind(undefined, true)));
   it('readDirSub', HttpTestSuite.get(HttpTestSuite.readDirSub, createMegaHttpFsVolume));
   it('readDirSubDirectly', HttpTestSuite.get(HttpTestSuite.readDirSubDirectly, createMegaHttpFsVolume));
   it('readFile1', HttpTestSuite.get(HttpTestSuite.readFile1, createMegaHttpFsVolume));

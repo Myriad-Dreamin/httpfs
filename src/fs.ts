@@ -283,13 +283,13 @@ class HttpReadStream extends PassThrough {
 
   close(callback: TCallback<void>): any {
     if (callback) this.once('close', callback);
-
-    this.fs.close(this.fd, err => {
-      if (err) this.emit('close', err);
-      else this.emit('close');
-    });
-
-    this.fd = null;
+    if (typeof this.fd === 'number') {
+      this.fs.close(this.fd, err => {
+        if (err) this.emit('close', err);
+        else this.emit('close');
+      });
+      this.fd = undefined;
+    }
   }
 }
 

@@ -257,6 +257,9 @@ class HttpReadStream extends PassThrough {
         this.emit('open', this.fd);
         this.upstream = (this.fs.fds[this.fd].node as HttpFsNode).getStream();
         this.upstream.pipe(this);
+        this.upstream.on('error', (err) => {
+          this.emit('error', err);
+        });
         this.read();
       } else {
         this.emit('close');

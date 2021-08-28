@@ -429,7 +429,6 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
 }
 
 interface baseHttpVolumeOption {
-  preload?: boolean;
   rootFileAlias?: boolean | string;
 }
 
@@ -438,14 +437,13 @@ interface PreloadHttpVolumeOption extends baseHttpVolumeOption {
 }
 
 interface NPreloadHttpVolumeOption extends baseHttpVolumeOption {
-  preload: false;
+  preload?: false;
 }
 
-export type HttpVolumeOption = baseHttpVolumeOption | PreloadHttpVolumeOption | NPreloadHttpVolumeOption;
+export type HttpVolumeOption = PreloadHttpVolumeOption | NPreloadHttpVolumeOption;
 
-export function createHttpVolume(url: string, options?: baseHttpVolumeOption): HttpVolumeApi;
+export function createHttpVolume(url: string, options?: NPreloadHttpVolumeOption): HttpVolumeApi;
 export function createHttpVolume(url: string, options: PreloadHttpVolumeOption): Promise<HttpVolumeApi>;
-export function createHttpVolume(url: string, options: NPreloadHttpVolumeOption): HttpVolumeApi;
 export function createHttpVolume(url: string, options?: HttpVolumeOption): HttpVolumeApi | Promise<HttpVolumeApi> {
   const volume = new HttpVolume(url, options);
   if (options?.preload) {

@@ -54,7 +54,7 @@ describe('httpfs', function () {
     expect(statRes.atimeMs).not.toEqual(statRes.mtimeMs);
   });
 
-  const createSimpleHttpFsVolume = async (preload?: boolean) => await createHttpVolume('http://0.0.0.0:8000/', {preload});
+  const createSimpleHttpFsVolume = async (preload?: boolean) => await createHttpVolume('http://0.0.0.0:8000/', {preload: preload as true});
 
   it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createSimpleHttpFsVolume.bind(undefined, true)));
   it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createSimpleHttpFsVolume.bind(undefined, true)));

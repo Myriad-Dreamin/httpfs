@@ -5,6 +5,7 @@ import HttpsProxyAgent from 'https-proxy-agent/dist/agent';
 import got, * as GotLib from 'got';
 import {RequestError} from 'got';
 import {HttpFsError} from '../../proto';
+import * as crypto from 'crypto';
 
 const mega = require('megajs');
 
@@ -89,7 +90,7 @@ export class MegaAsyncError extends HttpFsError {
 
 }
 
-interface MegaFileResponse {
+interface MegaFileInfoResponse {
   g: string;
   s: number;
   ip: string[];
@@ -99,15 +100,136 @@ interface MegaFileResponse {
   at: string;
 }
 
+export const MegaApiContextKey = Symbol('context');
+const LABEL_NAMES = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'grey'] as const;
+type megaLabelNames = typeof LABEL_NAMES;
+
+export interface MegaFileObject {
+  [MegaApiContextKey]: MegaApiContext;
+
+  type: number;
+  isDirectory: boolean;
+  favorited: boolean;
+  loadedFile: string;
+  owner: string;
+  downloadId: string | string[];
+  nodeId: string;
+  key: Buffer;
+  size?: number;
+  name?: string;
+  label?: megaLabelNames[number];
+  timestamp?: number;
+  attributes: Record<string, any>;
+  children: MegaFileObject[];
+  parent: MegaFileObject;
+}
+
+export interface MegaApiContext {
+  keepalive: boolean;
+  sid?: string;
+  counterId: number;
+  gateway: string;
+}
+
+
+class AES {
+  key: Buffer;
+
+  constructor(key: Buffer) {
+    if (key.length !== 16) throw Error('Wrong key length. Key must be 128bit.');
+    // this.key = Buffer.alloc(key.length);
+    // key.copy(this.key);
+    this.key = key;
+  }
+
+  encryptCBC(buffer: Buffer) {
+    const iv = Buffer.alloc(16, 0);
+    const cipher = crypto.createCipheriv('aes-128-cbc', this.key, iv).setAutoPadding(false);
+    const result = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    result.copy(buffer);
+    return result;
+  }
+
+  decryptCBC(buffer: Buffer) {
+    const iv = Buffer.alloc(16, 0);
+    const decipher = crypto.createDecipheriv('aes-128-cbc', this.key, iv).setAutoPadding(false);
+    const result = Buffer.concat([decipher.update(buffer), decipher.final()]);
+    result.copy(buffer);
+    return result;
+  }
+
+  stringhash(buffer: Buffer) {
+    const h32 = [0, 0, 0, 0];
+
+    for (let i = 0; i < buffer.length; i += 4) {
+      if (buffer.length - i < 4) {
+        const len = buffer.length - i;
+        h32[i / 4 & 3] ^= buffer.readIntBE(i, len) << (4 - len) * 8;
+      } else {
+        h32[i / 4 & 3] ^= buffer.readInt32BE(i);
+      }
+    }
+
+    let hash = Buffer.allocUnsafe(16);
+
+    for (let i = 0; i < 4; i++) {
+      // > v10.0 notAssert: , true
+      hash.writeInt32BE(h32[i], i * 4);
+    }
+
+    const cipher = crypto.createCipheriv('aes-128-ecb', this.key, Buffer.alloc(0));
+
+    for (let i = 16384; i--;) hash = cipher.update(hash);
+
+    const result = Buffer.allocUnsafe(8);
+    hash.copy(result, 0, 0, 4);
+    hash.copy(result, 4, 8, 12);
+    return result;
+  }
+
+  encryptECB(buffer: Buffer) {
+    const cipher = crypto.createCipheriv('aes-128-ecb', this.key, Buffer.alloc(0)).setAutoPadding(false);
+    const result = cipher.update(buffer);
+    result.copy(buffer);
+    return result;
+  }
+
+  decryptECB(buffer: Buffer) {
+    const decipher = crypto.createDecipheriv('aes-128-ecb', this.key, Buffer.alloc(0)).setAutoPadding(false);
+    const result = decipher.update(buffer);
+    result.copy(buffer);
+    return result;
+  }
+
+}
+
+interface HttpFileResp {
+  sn: string;
+  noc: number;
+  p: string;
+  t: number;
+  k: string;
+  h: string;
+  s: number;
+  ts: number;
+  u: string;
+  key: string;
+  directory: boolean;
+  loadedFile: string;
+  downloadId: string[];
+  a?: any;
+}
+
+const proxyAgents = {
+  http: new HttpsProxyAgent('http://localhost:10809'),
+  https: new HttpsProxyAgent('http://localhost:10809'),
+};
+
 export class HttpFsMegaUtils {
   static Errors = Errors;
   static RevErrors = revErrors;
 
-  static gotMegaReq<T>(apiContext: {
-    sid?: string;
-    counterId: number;
-    gateway: string;
-  }, qs: [string, string][], body: Record<string, any>): Promise<GotLib.Response<T>> {
+  static async gotMegaReq<T extends any[]>(apiContext: MegaApiContext, qs: [string, string][], body: Record<string, any>): Promise<GotLib.Response<T>> {
 
     const url = new URL(`https://g.api.mega.co.nz/cs`);
     url.searchParams.append('id', (apiContext.counterId++).toString());
@@ -119,150 +241,34 @@ export class HttpFsMegaUtils {
     for (const q of qs) {
       url.searchParams.append(q[0], q[1]);
     }
-
-    return got.post<T>({
-      url,
-      json: body,
-      responseType: 'json',
-      agent: {
-        http: new HttpsProxyAgent('http://127.0.0.1:10809'),
-        https: new HttpsProxyAgent('http://127.0.0.1:10809'),
+    let res: GotLib.Response<T>;
+    try {
+      res = await got.post<T>({
+        url,
+        json: body,
+        responseType: 'json',
+        agent: proxyAgents,
+      });
+    } catch (err) {
+      if (err instanceof GotLib.RequestError) {
+        throw new MegaAsyncError('Connection error: ' + err.message, err);
+      } else {
+        throw err;
       }
-    });
-    // if (err) return cb(err);
-    // if (!resp) return cb(Error('Empty response')); // Some error codes are returned as num, some as array with number.
-    //
-    // if (resp.length) resp = resp[0];
-    //
-    // if (!err && typeof resp === 'number' && resp < 0) {
-    //   if (resp === -3) {
-    //     if (retryno < MAX_RETRIES) {
-    //       return setTimeout(() => {
-    //         apiContext.request(json, cb, retryno + 1);
-    //       }, Math.pow(2, retryno + 1) * 1e3);
-    //     }
-    //   }
-    //
-    //   err = Error(ERRORS[-resp]);
-    // } else {
-    //   if (apiContext.keepalive && resp && resp.sn) {
-    //     apiContext.pull(resp.sn);
-    //   }
-    // }
-    //
-    // cb(err, resp);
+    }
+    if (!Array.isArray(res.body)) {
+      throw new MegaAsyncError('internal error: not array???');
+    }
+
+    const respBody = res.body[0];
+    if (typeof respBody === 'number') {
+      throw MegaAsyncError.errBody(`Response Error (${respBody}): ${Errors[-respBody]}`, respBody, res);
+    }
+
+    return res;
   }
 
-
-// async function gotMegaLoadDir(file: any) {
-//   // const req = file.directory ? {
-//   //   a: 'f',
-//   //   c: 1,
-//   //   ca: 1,
-//   //   r: 1,
-//   // } : {
-//   //   a: 'g',
-//   //   p: file.downloadId
-//   // };
-//   // const _querystring = [];
-//   //
-//   // if (this.directory) {
-//   //   _querystring.push(['n', file.downloadId]);
-//   // }
-//   //
-//   // const response = await gotMegaReq<[{
-//   //   g: string;
-//   //   s: number;
-//   //   ip: string[];
-//   //   fa: string;
-//   //   tl: number;
-//   //   msd: number;
-//   //   at: string;
-//   // }]>(file.api, _querystring, [req]);
-//   // const body = response[0];
-//   //
-//   // if (file.directory) {
-//   //   const filesMap = Object.create(null);
-//   //   const nodes = body.f;
-//   //   const folder = nodes.find(node => node.k && // the root folder is the one which "n" equals the first part of "k"
-//   //     node.h === node.k.split(':')[0]);
-//   //   const aes = file.key ? new AES(file.key) : null;
-//   //   file.nodeId = folder.h;
-//   //   file.timestamp = folder.ts;
-//   //   filesMap[folder.h] = file;
-//   //
-//   //   var _iterator = _createForOfIteratorHelper(nodes),
-//   //     _step;
-//   //
-//   //   try {
-//   //     for (_iterator.s(); !(_step = _iterator.n()).done;) {
-//   //       let file = _step.value;
-//   //       if (file === folder) continue;
-//   //       const fileObj = new File(file, file.storage);
-//   //       fileObj.loadMetadata(aes, file); // is it the best way to handle file?
-//   //
-//   //       fileObj.downloadId = [file.downloadId, file.h];
-//   //       filesMap[file.h] = fileObj;
-//   //     }
-//   //   } catch (err) {
-//   //     _iterator.e(err);
-//   //   } finally {
-//   //     _iterator.f();
-//   //   }
-//   //
-//   //   var _iterator2 = _createForOfIteratorHelper(nodes),
-//   //     _step2;
-//   //
-//   //   try {
-//   //     for (_iterator2.s(); !(_step2 = _iterator2.n()).done;) {
-//   //       let file = _step2.value;
-//   //       const parent = filesMap[file.p];
-//   //
-//   //       if (parent) {
-//   //         const fileObj = filesMap[file.h];
-//   //         if (!parent.children) parent.children = [];
-//   //         parent.children.push(fileObj);
-//   //         fileObj.parent = parent;
-//   //       }
-//   //     }
-//   //   } catch (err) {
-//   //     _iterator2.e(err);
-//   //   } finally {
-//   //     _iterator2.f();
-//   //   }
-//   //
-//   //   file.loadMetadata(aes, folder);
-//   //
-//   //   if (file.key && !file.attributes) {
-//   //     return cb(Error('Attributes could not be decrypted with provided key.'));
-//   //   }
-//   //
-//   //   if (file.loadedFile) {
-//   //     const loadedNode = filesMap[file.loadedFile];
-//   //
-//   //     if (typeof loadedNode === 'undefined') {
-//   //       cb(Error('Node (file or folder) not found in folder'));
-//   //     } else {
-//   //       cb(null, loadedNode);
-//   //     }
-//   //   } else {
-//   //     cb(null, file);
-//   //   }
-//   // } else {
-//   //   file.size = body.s;
-//   //   file.decryptAttributes(body.at);
-//   //
-//   //   if (file.key && !file.attributes) {
-//   //     return cb(Error('Attributes could not be decrypted with provided key.'));
-//   //   }
-//   //
-//   //   cb(null, file);
-//   // }
-//   return this;
-// }
-
-
-  static gotMegaDownload(file: any, options: {
+  static gotMegaDownload(apiContext: MegaApiContext, file: MegaFileObject, options: {
     start?: number;
     returnCiphertext?: boolean;
     end?: number;
@@ -294,7 +300,7 @@ export class HttpFsMegaUtils {
       req.p = file.downloadId;
     }
 
-    if (file.directory) throw new HttpFsError('Can\'t download: folder download isn\'t supported'); // If options.returnCiphertext is true then the ciphertext is returned.
+    if (file.isDirectory) throw new HttpFsError('Can\'t download: folder download isn\'t supported'); // If options.returnCiphertext is true then the ciphertext is returned.
     // The result can be decrypted later using mega.decrypt() stream
 
     if (!file.key && !options.returnCiphertext) throw new HttpFsError('Can\'t download: key isn\'t defined');
@@ -316,13 +322,9 @@ export class HttpFsMegaUtils {
       stream$$1.emit('error', new MegaAsyncError('Connection error: ' + err.message, err));
     }
 
-    HttpFsMegaUtils.gotMegaReq<[MegaFileResponse]>(file.api, _querystring, [req])
-      .then((response: GotLib.Response<[MegaFileResponse]>) => {
+    HttpFsMegaUtils.gotMegaReq<[MegaFileInfoResponse]>(apiContext, _querystring, [req])
+      .then((response: GotLib.Response<[MegaFileInfoResponse]>) => {
         const body = response.body[0];
-        if (typeof body === 'number') {
-          stream$$1.emit('error', MegaAsyncError.errBody(`Response Error (${body as number}): ${Errors[-body]}`, body, response));
-          return;
-        }
 
         if (typeof body.g !== 'string' || body.g.substr(0, 4) !== 'http') {
           stream$$1.emit('error', Error('MEGA servers returned an invalid body, maybe caused by rate limit'));
@@ -337,10 +339,7 @@ export class HttpFsMegaUtils {
 
         if (maxConnections === 1) {
           const r = got.stream(`${body.g}/${apiStart}-${end}`, {
-            agent: {
-              http: new HttpsProxyAgent('http://127.0.0.1:10809'),
-              https: new HttpsProxyAgent('http://127.0.0.1:10809'),
-            }
+            agent: proxyAgents,
           });
           r.on('error', handleConnectionErrors);
           r.on('response', handleMegaErrors);
@@ -359,12 +358,179 @@ export class HttpFsMegaUtils {
         }
       })
       .catch((err) => {
-        if (err instanceof GotLib.RequestError) {
-          stream$$1.emit('error', new MegaAsyncError('Connection error: ' + err.message, err));
-        } else {
-          stream$$1.emit('error', err);
-        }
+        stream$$1.emit('error', err);
       });
     return stream$$1;
+  }
+
+  static async loadAttributes(apiContext: MegaApiContext, file: MegaFileObject): Promise<MegaFileObject> {
+    const _querystring = [];
+    let req: any;
+    if (file.isDirectory) {
+      req = {
+        a: 'f',
+        c: 1,
+        ca: 1,
+        r: 1,
+      };
+      _querystring.push(['n', file.downloadId]);
+    } else {
+      req = {
+        a: 'g',
+        p: file.downloadId,
+      };
+    }
+
+    const res = await HttpFsMegaUtils.gotMegaReq<[{
+      f: HttpFileResp[];
+      at: string;
+      s: number;
+    }]>(apiContext, _querystring, [req]);
+    const body = res.body[0];
+
+    function d64(s: string): Buffer {
+      return Buffer.from(s, 'base64');
+    }
+
+    function formatKey(key: Buffer | string): Buffer {
+      return typeof key === 'string' ? d64(key) : key;
+    } // URL Safe Base64 encode/decode
+
+    function checkConstructorArgument(value: any): void {
+      // If a string was passed then check if it's not empty and
+      // contains only base64 valid characters
+      if (typeof value === 'string' && !/^[\w-]+$/.test(value)) {
+        throw Error(`Invalid argument: "${value}"`);
+      }
+    }
+
+    function unmergeKeyMac(key) {
+      const newKey = Buffer.alloc(32);
+      key.copy(newKey);
+
+      for (let i = 0; i < 16; i++) {
+        newKey.writeUInt8(newKey.readUInt8(i) ^ newKey.readUInt8(16 + i), i);
+      }
+
+      return newKey;
+    }
+
+    function getCipher(key: Buffer) {
+      return new AES(unmergeKeyMac(key).slice(0, 16));
+    }
+
+    function unpackAttributes(attrs: Buffer) {
+      // read until the first null byte
+      let end = 0;
+
+      while (end < attrs.length && attrs.readUInt8(end)) end++;
+
+      const head = attrs.slice(0, end).toString();
+      if (head.substr(0, 6) !== 'MEGA{"') return;
+
+      try {
+        return JSON.parse(head.substr(4));
+      } catch (e) {
+        throw new Error(`unpack failed: ${(e as unknown as Error)?.message}`);
+      }
+    }
+
+    function decryptAttributes(fileObj: MegaFileObject, aes: AES, at: string): void {
+      if (!fileObj.key) return;
+      const attributes = d64(at);
+      getCipher(fileObj.key).decryptCBC(attributes);
+      const unpackedAttributes = unpackAttributes(attributes);
+
+      if (unpackedAttributes) {
+        fileObj.attributes = unpackedAttributes;
+        fileObj.name = unpackedAttributes.n;
+        fileObj.label = LABEL_NAMES[unpackedAttributes.lbl || 0];
+        fileObj.favorited = !!unpackedAttributes.fav;
+      }
+
+      return;
+    }
+
+    function loadMetadata(ff: MegaFileObject, f: HttpFileResp, aes: AES) {
+      checkConstructorArgument(f.downloadId);
+      checkConstructorArgument(f.key);
+      checkConstructorArgument(f.loadedFile);
+      const parts = f.k.split(':');
+      ff.isDirectory = !!f.t;
+      ff.type = ff.isDirectory ? 1 : 0;// Cr
+      ff.key = formatKey(parts[parts.length - 1]);
+      ff.size = f.s || 0;
+      ff.timestamp = f.ts || 0;
+      ff.owner = f.u;
+      if (aes) {
+        aes.decryptECB(ff.key);
+        if (f.a) {
+          decryptAttributes(ff, aes, f.a);
+        }
+      }
+    }
+
+    function createFileFromHttpResp(f: HttpFileResp, aes: AES): MegaFileObject {
+      const ff: MegaFileObject = {
+        [MegaApiContextKey]: apiContext,
+      } as MegaFileObject;
+      loadMetadata(ff, f, aes);
+      return ff;
+    }
+
+    if (file.isDirectory) {
+      const filesMap: Record<string, MegaFileObject> = {};
+      const nodes = body.f;
+      const folder = nodes.find(node => node.k && // the root folder is the one which "n" equals the first part of "k"
+        node.h === node.k.split(':')[0]);
+      const aes = file.key ? new AES(file.key) : null;
+      file.nodeId = folder.h;
+      file.timestamp = folder.ts;
+      filesMap[folder.h] = file;
+
+      for (const child of nodes) {
+        if (child === folder) continue;
+        const fileObj = createFileFromHttpResp(child, aes);
+        // loadMetadata(fileObj, aes, child); // is it the best way to handle child?
+
+        fileObj.downloadId = [file.downloadId as unknown as string, child.h];
+        filesMap[child.h] = fileObj;
+      }
+
+      for (const child of nodes) {
+        const parent = filesMap[child.p];
+
+        if (parent) {
+          const fileObj = filesMap[child.h];
+          if (!parent.children) parent.children = [];
+          parent.children.push(fileObj);
+          fileObj.parent = parent;
+        }
+      }
+
+      loadMetadata(file, folder, aes);
+
+      if (file.key && !file.attributes) {
+        throw new Error('Attributes could not be decrypted with provided key.');
+      }
+
+      if (file.loadedFile) {
+        const loadedNode = filesMap[file.loadedFile];
+
+        if (typeof loadedNode === 'undefined') {
+          throw new Error('Node (file or folder) not found in folder');
+        } else {
+          return loadedNode;
+        }
+      }
+    } else {
+      file.size = body.s;
+      decryptAttributes(file, undefined, body.at);
+
+      if (file.key && !file.attributes) {
+        throw new Error('Attributes could not be decrypted with provided key.');
+      }
+    }
+    return file;
   }
 }

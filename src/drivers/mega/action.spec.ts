@@ -7,7 +7,8 @@ jest.setTimeout(5000000);
 describe('httpfs', function () {
   GenericUrlAction.registerByDomain('mega.nz', MegaUrlAction);
 
-  const createMegaHttpFsVolume = async (preload?: boolean) => await createHttpVolume('https://mega.nz/folder/mphTHa7Y#tDZzOlzLE7nNIMNT5K1Hag', {preload});
+  const createMegaHttpFsVolume = async (preload?: boolean) =>
+    await createHttpVolume('https://mega.nz/folder/mphTHa7Y#tDZzOlzLE7nNIMNT5K1Hag', {preload: preload as true});
 
   it('statDir', HttpTestSuite.get(HttpTestSuite.statDir, createMegaHttpFsVolume.bind(undefined, true)));
   it('readDir', HttpTestSuite.get(HttpTestSuite.readDir, createMegaHttpFsVolume.bind(undefined, true)));

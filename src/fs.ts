@@ -218,6 +218,10 @@ class HttpLinkNode extends Link {
   }
 }
 
+export interface IHttpReadStream extends IReadStream {
+  upstream?: Readable;
+}
+
 class HttpReadStream extends PassThrough {
   upstream?: Readable;
   fd?: number;
@@ -406,13 +410,13 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
     return this.root.walk(filenameOrSteps);
   }
 
-  createReadStream(path: PathLike, options?: IReadStreamOptions | string): IReadStream {
+  createReadStream(path: PathLike, options?: IReadStreamOptions | string): IHttpReadStream {
     if (typeof options === 'string') {
       return new HttpReadStream(this, path, {
         mode: options,
-      }) as unknown as IReadStream;
+      }) as unknown as IHttpReadStream;
     } else {
-      return new HttpReadStream(this, path, options) as unknown as IReadStream;
+      return new HttpReadStream(this, path, options) as unknown as IHttpReadStream;
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@myriaddreamin/httpfs",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "MIT",
   "scripts": {
     "build": "tsc -p ./tsconfig.build.json",

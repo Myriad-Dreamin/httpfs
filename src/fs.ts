@@ -163,57 +163,60 @@ class HttpLinkNode extends Link {
   }
 
   async loadRemote(remote?: IHttpDirent): Promise<IHttpDirent> {
-    if (this.loaded && this.node.loaded) {
-      return undefined;
-    }
-    remote = remote || await this.node.loadRemote();
-    if (remote.mTime) {
-      this.node.ctime = this.node.mtime = new Date(remote.mTime);
-    }
-    if (remote.cTime) {
-      this.node.ctime = new Date(remote.cTime);
-      this.node.mtime = this.node.mtime || this.node.ctime;
-    }
-    this.node.setSize(remote.size || 0);
-    this.node.setLoaded(this.loaded = remote.loaded);
-    this.node.setAction(this.vol.adaptAction(remote.action));
+    try {
+      if (this.loaded && this.node.loaded) {
+        return undefined;
+      }
+      remote = remote || await this.node.loadRemote();
+      if (remote.mTime) {
+        this.node.ctime = this.node.mtime = new Date(remote.mTime);
+      }
+      if (remote.cTime) {
+        this.node.ctime = new Date(remote.cTime);
+        this.node.mtime = this.node.mtime || this.node.ctime;
+      }
+      this.node.setSize(remote.size || 0);
+      this.node.setLoaded(this.loaded = remote.loaded);
+      this.node.setAction(this.vol.adaptAction(remote.action));
 
-    switch (remote?.type) {
-      case 'dir':
-        this.node.setIsDirectory();
-        if (remote.loaded) {
-          for (const ch of Object.keys(this.children)) {
-            this.deleteChild(this.children[ch]);
-          }
-          const promises = [];
-          for (const ch of remote.children) {
-            const d = this.vol.createNode(ch.type === 'dir', 0o644) as HttpFsNode;
-            const l = this.vol.createLink() as HttpLinkNode;
-            l.setNode(d);
-            this.setChild(ch.name, l);
-            l.steps = this.steps.concat([ch.name]);
-            if (ch.loaded) {
-              promises.push(l.loadRemote(ch));
-            } else {
-              d.setAction(this.vol.adaptAction(ch.action));
+      switch (remote?.type) {
+        case 'dir':
+          this.node.setIsDirectory();
+          if (remote.loaded) {
+            for (const ch of Object.keys(this.children)) {
+              this.deleteChild(this.children[ch]);
+            }
+            const promises = [];
+            for (const ch of remote.children) {
+              const d = this.vol.createNode(ch.type === 'dir', 0o644) as HttpFsNode;
+              const l = this.vol.createLink() as HttpLinkNode;
+              l.setNode(d);
+              this.setChild(ch.name, l);
+              l.steps = this.steps.concat([ch.name]);
+              if (ch.loaded) {
+                promises.push(l.loadRemote(ch));
+              } else {
+                d.setAction(this.vol.adaptAction(ch.action));
+              }
+            }
+            if (promises.length) {
+              await Promise.all(promises);
             }
           }
-          if (promises.length) {
-            await Promise.all(promises);
+          break;
+        case 'file':
+          this.node.setIsFile();
+          if (remote.name) {
+            this.createChild(remote.name, this.node);
           }
-        }
-        break;
-      case 'file':
-        this.node.setIsFile();
-        if (remote.name) {
-          this.createChild(remote.name, this.node);
-        }
-        break;
-      default:
-        this.node.setIsFile();
-        break;
+          break;
+        default:
+          this.node.setIsFile();
+          break;
+      }
+    } catch (e) {
+      throw e;
     }
-
     return remote;
   }
 }
@@ -306,25 +309,26 @@ function isDir(d: IHttpDirent): d is (HttpDirInfo | HttpNDirInfo) {
 
 function adaptLoadRemoteAction(volume: HttpVolume, action: HttpFsURLAction, optionRootName?: string): HttpFsURLAction {
   const l = action.loadRemote;
-  action.loadRemote = async function (): Promise<IHttpDirent> {
-    const dirent = await l.call(this);
-    if (isDir(dirent)) {
+  action.loadRemote = function (): Promise<IHttpDirent> {
+    return l.call(this).then(dirent => {
+      if (isDir(dirent)) {
 
-      // adapt it if necessary
-      dirent.action = dirent.action.loadRemote === action.loadRemote ?
-        dirent.action : adaptLoadRemoteAction(volume, action, optionRootName);
-      return dirent;
-    }
-    if (!dirent.name) {
-      dirent.name = optionRootName || 'nameless-file';
-    }
-    return {
-      type: 'dir',
-      name: '',
-      loaded: true,
-      action,
-      children: [dirent],
-    }
+        // adapt it if necessary
+        dirent.action = dirent.action.loadRemote === action.loadRemote ?
+          dirent.action : adaptLoadRemoteAction(volume, action, optionRootName);
+        return dirent;
+      }
+      if (!dirent.name) {
+        dirent.name = optionRootName || 'nameless-file';
+      }
+      return {
+        type: 'dir',
+        name: '',
+        loaded: true,
+        action,
+        children: [dirent],
+      }
+    });
   }
   return action;
 }
@@ -424,7 +428,7 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   }
 
   async loadRemote(): Promise<void> {
-    await this.root.loadRemote();
+    return this.root.loadRemote().then();
   }
 }
 

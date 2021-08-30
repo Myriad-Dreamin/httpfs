@@ -1,7 +1,8 @@
-import {HttpFsError, IHttpDirent, UrlLoadRemoteAction, UrlReadStreamAction} from './proto';
+import {HttpFsError, HttpVolumeApiContext, IHttpDirent, UrlLoadRemoteAction, UrlReadStreamAction} from './proto';
 import {URL} from 'url';
 import got, * as GotLib from 'got';
 import {GotUrlAction} from './drivers/generic/rs.got';
+import {GotAction} from './drivers/generic/got';
 
 const hrefExtractReg = /href="((?:\\"|[^"])*)"/g;
 
@@ -79,8 +80,10 @@ export class SimpleHttpUrlAction extends GotUrlAction implements UrlReadStreamAc
   handlePythonServer = handlePythonServerMethod;
 
 
-  async loadRemote(): Promise<IHttpDirent> {
-    return this.handlePythonServer(await got.get(this.url));
+  async loadRemote(ctx: HttpVolumeApiContext): Promise<IHttpDirent> {
+    return this.handlePythonServer(await got.get(this.url, {
+      agent: GotAction.getAgentOption(ctx),
+    }));
   }
 
 }
@@ -106,7 +109,7 @@ export class GenericUrlAction extends GotUrlAction implements UrlLoadRemoteActio
 
   handlePythonServerInternal = handlePythonServerMethod;
 
-  async handlePythonServer(res: GotLib.Response): Promise<IHttpDirent | undefined> {
+  async handlePythonServer(ctx: HttpVolumeApiContext, res: GotLib.Response): Promise<IHttpDirent | undefined> {
 
     const contentType = res.headers['content-type'];
 
@@ -117,30 +120,33 @@ export class GenericUrlAction extends GotUrlAction implements UrlLoadRemoteActio
       return dirent as IHttpDirent;
     }
 
-    return this.handlePythonServerInternal(await got.get(this.url));
+    return this.handlePythonServerInternal(await got.get(this.url, {
+      agent: GotAction.getAgentOption(ctx),
+    }));
   }
 
-  handleServer(server: string, res: GotLib.Response): Promise<IHttpDirent | undefined> {
+  handleServer(ctx: HttpVolumeApiContext, server: string, res: GotLib.Response): Promise<IHttpDirent | undefined> {
     if (server.startsWith('SimpleHTTP')) {
-      return this.handlePythonServer(res);
+      return this.handlePythonServer(ctx, res);
     }
     return undefined;
   }
 
-  async loadRemote(): Promise<IHttpDirent> {
+  async loadRemote(ctx: HttpVolumeApiContext): Promise<IHttpDirent> {
     const handleClass = GenericUrlAction.externalHandler.get(this.url.hostname);
     if (handleClass && (!handleClass.notify || handleClass.notify(this.url))) {
-      return (new handleClass(this.url)).loadRemote();
+      return (new handleClass(this.url)).loadRemote(ctx);
     }
 
     const res = await got.head(this.url, {
       headers: {
         // 'Accept-Encoding': 'gzip, deflate',
-      }
+      },
+      agent: GotAction.getAgentOption(ctx),
     });
     const server = res.headers['server'] as unknown as string;
     if (server) {
-      const dirent = await this.handleServer(server, res);
+      const dirent = await this.handleServer(ctx, server, res);
       if (dirent) {
         return dirent;
       }

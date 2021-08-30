@@ -7,10 +7,10 @@ import {HttpTestSuite, pipelineAsync} from './suite.spec';
 jest.setTimeout(500000);
 describe('httpfs context', function () {
   const init = {
-    proxy: 'http://localhost:10809'
+    proxy: undefined,
   };
   const context = {
-    proxy: 'http://localhost:10709'
+    proxy: undefined,
   };
 
   it('createReadStream', async () => {

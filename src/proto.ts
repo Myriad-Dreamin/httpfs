@@ -1,12 +1,13 @@
 import {Readable} from 'stream';
 import {Volume} from 'memfs/lib/volume';
+import {URL} from 'url';
 
 export interface UrlReadAction {
   read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number;
 }
 
 export interface UrlReadStreamAction {
-  createReadStream(): Readable;
+  createReadStream(ctx: HttpVolumeApiContext): Readable;
 }
 
 export interface UrlWriteAction {
@@ -41,7 +42,7 @@ export interface HttpDirInfo extends HttpFileInfoBase {
 export type IHttpDirent = HttpFileInfo | HttpNDirInfo | HttpDirInfo;
 
 export interface UrlLoadRemoteAction {
-  loadRemote(): Promise<IHttpDirent>;
+  loadRemote(ctx: HttpVolumeApiContext): Promise<IHttpDirent>;
 }
 
 export class HttpFsError extends Error {
@@ -68,8 +69,25 @@ type fsAsyncAction =
   | 'stat'
   | 'lstat'
   | 'readdir';
+
+export interface HttpVolumeApiContext {
+  proxy?: string;
+}
+
 export type HttpVolumeApi = Pick<Volume, fsAction> & {
   loadRemote(): Promise<void>;
+  setContext(c: HttpVolumeApiContext): HttpVolumeApi;
   promises: Pick<Volume['promises'], fsAsyncAction>
 };
+
+export interface HttpVolumeApiA extends HttpVolumeApi {
+  adaptAction(action: HttpFsURLAction): HttpFsURLAction;
+
+  adaptRootAction(action: HttpFsURLAction): HttpFsURLAction;
+
+  setRootAction(action: HttpFsURLAction): void;
+
+  createRootAction(url: URL): HttpFsURLAction;
+}
+
 export type HttpFsURLAction = Partial<UrlReadAction & UrlWriteAction & UrlReadStreamAction> & UrlLoadRemoteAction;

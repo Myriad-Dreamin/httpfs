@@ -1,9 +1,17 @@
 import {IReadStream, IReadStreamOptions, pathToSteps, TCallback, TFlags, TMode, Volume} from 'memfs/lib/volume';
-import {Link, Node} from 'memfs/lib/node';
+import {File, Link, Node} from 'memfs/lib/node';
 import {URL} from 'url';
 import {PathLike} from 'fs';
 import {PassThrough, Readable} from 'stream';
-import {HttpDirInfo, HttpFsError, HttpFsURLAction, HttpNDirInfo, HttpVolumeApi, IHttpDirent} from './proto';
+import {
+  HttpDirInfo,
+  HttpFsError,
+  HttpFsURLAction,
+  HttpNDirInfo,
+  HttpVolumeApi,
+  HttpVolumeApiContext,
+  IHttpDirent
+} from './proto';
 import {GenericUrlAction} from './action.generic';
 
 function mask(urlAction: HttpFsURLAction, perm: number) {
@@ -65,6 +73,7 @@ class HttpFsNode extends Node {
     return this.size;
   }
 
+  // todo: file capture http context
   read(buf: Buffer | Uint8Array, off?: number, len?: number, pos?: number): number {
     if (!this.urlAction.read) {
       throw new HttpFsError('Permission Denied: Cannot read');
@@ -81,8 +90,12 @@ class HttpFsNode extends Node {
     return this.urlAction.write(buf, off, len, pos);
   }
 
-  getStream(): Readable {
-    return this.urlAction.createReadStream();
+  getStream(ctx: HttpVolumeApiContext): Readable {
+    return this.urlAction.createReadStream(ctx);
+  }
+
+  loadRemote(ctx: HttpVolumeApiContext): Promise<IHttpDirent> {
+    return this.urlAction.loadRemote(ctx);
   }
 
   canRead(): boolean {
@@ -92,13 +105,9 @@ class HttpFsNode extends Node {
   canWrite(): boolean {
     return !!this.urlAction.write;
   }
-
-  loadRemote(): Promise<IHttpDirent> {
-    return this.urlAction.loadRemote();
-  }
 }
 
-class HttpLinkNode extends Link {
+class HttpFsLink extends Link {
   node: HttpFsNode;
   vol: HttpVolume;
   private _key: string;
@@ -108,17 +117,17 @@ class HttpLinkNode extends Link {
     super(vol, parent, name);
   }
 
-  setNode(node: Node) {
+  setNode(node: Node): void {
     super.setNode(node);
     this.loaded = false;
   }
 
-  setAction(action: HttpFsURLAction) {
+  setAction(action: HttpFsURLAction): void {
     this.node.setAction(action);
   }
 
   // noinspection DuplicatedCode
-  walk(steps: string[], stop?: number, i?: number): HttpLinkNode | null {
+  walk(steps: string[], stop?: number, i?: number): HttpFsLink | null {
     if (!this.loaded) {
       throw new HttpFsError('not loaded link node under synchronous environment');
     }
@@ -131,14 +140,14 @@ class HttpLinkNode extends Link {
     if (i >= steps.length || i >= stop)
       return this;
     let step = steps[i];
-    let link = this.getChild(step) as HttpLinkNode | null;
+    let link = this.getChild(step) as HttpFsLink | null;
     if (!link)
       return link;
     return link.walk(steps, stop, i + 1);
   }
 
   // noinspection DuplicatedCode
-  async walkAsync(steps: string[], stop?: number, i?: number): Promise<HttpLinkNode | null> {
+  async walkAsync(steps: string[], stop?: number, i?: number): Promise<HttpFsLink | null> {
     if (!this.loaded) {
       return this.loadRemote().then(() => this.walkAsync(steps, stop, i));
     }
@@ -151,7 +160,7 @@ class HttpLinkNode extends Link {
     if (i >= steps.length || i >= stop)
       return this;
     let step = steps[i];
-    let link = this.getChild(step) as HttpLinkNode | null;
+    let link = this.getChild(step) as HttpFsLink | null;
     if (!link)
       return link;
     return link.walkAsync(steps, stop, i + 1);
@@ -167,7 +176,7 @@ class HttpLinkNode extends Link {
       if (this.loaded && this.node.loaded) {
         return undefined;
       }
-      remote = remote || await this.node.loadRemote();
+      remote = remote || await this.node.loadRemote(this.vol.getContext());
       if (remote.mTime) {
         this.node.ctime = this.node.mtime = new Date(remote.mTime);
       }
@@ -189,7 +198,7 @@ class HttpLinkNode extends Link {
             const promises = [];
             for (const ch of remote.children) {
               const d = this.vol.createNode(ch.type === 'dir', 0o644) as HttpFsNode;
-              const l = this.vol.createLink() as HttpLinkNode;
+              const l = this.vol.createLink() as HttpFsLink;
               l.setNode(d);
               this.setChild(ch.name, l);
               l.steps = this.steps.concat([ch.name]);
@@ -258,7 +267,8 @@ class HttpReadStream extends PassThrough {
 
       if (fd !== undefined) {
         this.emit('open', this.fd);
-        this.upstream = (this.fs.fds[this.fd].node as HttpFsNode).getStream();
+        const file = this.fs.fds[this.fd];
+        this.upstream = file.node.getStream(file.link.vol.getContext());
         this.upstream.pipe(this);
         this.upstream.on('error', (err) => {
           this.emit('error', err);
@@ -333,12 +343,29 @@ function adaptLoadRemoteAction(volume: HttpVolume, action: HttpFsURLAction, opti
   return action;
 }
 
+const contextKey = Symbol('context');
+
+interface HttpFsFile extends File {
+  /**
+   * Hard link that this file opened.
+   */
+  link: HttpFsLink;
+  /**
+   * Reference to a `Node`.
+   */
+  node: HttpFsNode;
+}
+
 export class HttpVolume extends Volume implements HttpVolumeApi {
-  root: HttpLinkNode;
+  [contextKey]?: HttpVolumeApiContext;
+  root: HttpFsLink;
+  fds: {
+    [fd: number]: HttpFsFile;
+  };
   props: {
     Node: new(...args) => HttpFsNode;
-    Link: new(...args) => HttpLinkNode;
-    File: Volume['props']['File'];
+    Link: new(...args) => HttpFsLink;
+    File: new(...args) => HttpFsFile;
   }
   protected url: string;
   protected options?: Omit<HttpVolumeOption, 'preload'>;
@@ -346,11 +373,11 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   constructor(url: string, options?: Omit<HttpVolumeOption, 'preload'>) {
     super({
       Node: HttpFsNode,
-      Link: HttpLinkNode,
+      Link: HttpFsLink,
     });
     this.url = url;
     this.options = {...options};
-    this.root.setAction(this.createRootAction(new URL(this.url)));
+    this.setRootAction(this.createRootAction(new URL(this.url)));
 
     const a = super['wrapAsync'];
     (super['wrapAsync'] as unknown as any) = (method: (...args: any[]) => any, args: any[], callback: (...args: any[]) => any) => {
@@ -392,17 +419,24 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
     return super.getLink(steps);
   }
 
+  setRootAction(action: HttpFsURLAction): void {
+    this.root.setAction(action);
+  }
+
   adaptAction(action: HttpFsURLAction): HttpFsURLAction {
     return action;
   }
 
-  createRootAction(url: URL): HttpFsURLAction {
-    const g = new GenericUrlAction(url);
+  adaptRootAction(action: HttpFsURLAction): HttpFsURLAction {
     if (this.options.rootFileAlias) {
-      return adaptLoadRemoteAction(this, g,
+      return adaptLoadRemoteAction(this, action,
         typeof this.options.rootFileAlias === 'string' ? this.options.rootFileAlias : undefined);
     }
-    return g;
+    return action;
+  }
+
+  createRootAction(url: URL): HttpFsURLAction {
+    return this.adaptRootAction(new GenericUrlAction(url));
   }
 
   createNode(isDirectory?: boolean, perm?: number): HttpFsNode {
@@ -430,10 +464,26 @@ export class HttpVolume extends Volume implements HttpVolumeApi {
   async loadRemote(): Promise<void> {
     return this.root.loadRemote().then();
   }
+
+  setContext(c: HttpVolumeApiContext): HttpVolume {
+    this[contextKey] = c;
+    return this;
+  }
+
+  getProxy(): string | undefined {
+    return this[contextKey].proxy || this.options.proxy;
+  }
+
+  getContext(): HttpVolumeApiContext {
+    return this[contextKey] || {
+      proxy: this.options.proxy,
+    };
+  }
 }
 
 interface baseHttpVolumeOption {
   rootFileAlias?: boolean | string;
+  proxy?: string;
 }
 
 interface PreloadHttpVolumeOption extends baseHttpVolumeOption {

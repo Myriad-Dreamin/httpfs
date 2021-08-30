@@ -1,16 +1,9 @@
 {
   "name": "@myriaddreamin/httpfs",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "license": "MIT",
-  "scripts": {
-    "build": "tsc -p ./tsconfig.build.json",
-    "do-publish": "yarn run build && node scripts/prepublish.js && npm publish --access public dist"
-  },
-  "homepage": "https://github.com/Myriad-Dreamin/httpfs#readme",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Myriad-Dreamin/httpfs.git"
-  },
+  "main": "index.js",
+  "description": "filesystem like api to access any file via http or https protocol",
   "keywords": [
     "http",
     "filesystem",
@@ -22,6 +15,28 @@
     "google drive",
     "mega"
   ],
+  "os": [
+    "linux",
+    "android",
+    "win32",
+    "darwin",
+    "freebsd",
+    "openbsd"
+  ],
+  "author": {
+    "email": "camiyoru@gmail.com",
+    "name": "Myriad-Dreamin",
+    "url": "https://github.com/Myriad-Dreamin"
+  },
+  "homepage": "https://github.com/Myriad-Dreamin/httpfs#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Myriad-Dreamin/httpfs.git"
+  },
+  "scripts": {
+    "build": "tsc -p ./tsconfig.build.json",
+    "do-publish": "yarn run build && node scripts/prepublish.js && npm publish --access public dist"
+  },
   "dependencies": {
     "memfs": "^3.2.2",
     "got": "^11.8.2",

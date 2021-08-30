@@ -36,9 +36,16 @@ for (const k of Object.keys(Errors)) {
 
 export enum MegaAsyncErrno {
   EUnknown = 0,
+  EInternal = -1,
+  EArgs = -2,
+  EAgain = -3,
   ERateLimit = -4,
+  EFailed = -5,
+  ETooMany = -6,
   ENoEnt = -9,
   EBlocked = -16,
+  EWrongUrl = -101,
+  EWrongKey = -102,
 }
 
 export class MegaAsyncError extends HttpFsError {

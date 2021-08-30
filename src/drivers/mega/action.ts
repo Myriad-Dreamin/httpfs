@@ -3,14 +3,13 @@ import {
   HttpDirInfo,
   HttpFileInfo,
   HttpFsError,
+  HttpVolumeApiContext,
   IHttpDirent,
   UrlLoadRemoteAction,
   UrlReadStreamAction
 } from '../../proto';
 import {HttpFsMegaUtils, MegaApiContext, MegaApiContextKey, MegaAsyncError, MegaFileObject} from './client';
 import {Readable} from 'stream';
-
-const mega = require('megajs');
 
 export class MegaUrlAction implements UrlLoadRemoteAction, UrlReadStreamAction {
   apiContext: MegaApiContext;
@@ -30,26 +29,21 @@ export class MegaUrlAction implements UrlLoadRemoteAction, UrlReadStreamAction {
     }
   }
 
-  createReadStream(): Readable {
+  createReadStream(ctx: HttpVolumeApiContext): Readable {
     return HttpFsMegaUtils.gotMegaDownload(this.apiContext, this.fileHandler, {
       maxConnections: 1,
       forceHttps: true,
+      proxy: ctx.proxy,
     });
   }
 
-  async loadRemote(): Promise<IHttpDirent> {
+  async loadRemote(ctx: HttpVolumeApiContext): Promise<IHttpDirent> {
     if (this.childPath && this.childPath !== '/') {
       throw new HttpFsError('loading mega dir/file is not root');
     }
 
     try {
-      // return new Promise(resolve => {
-      //   (this.fileHandler as any).loadAttributes((err) => {
-      //     console.log(err);
-      //     resolve(HttpFsMegaUtils.loadAttributes(this.apiContext, this.fileHandler) as any);
-      //   });
-      // });
-      this.fileHandler = await HttpFsMegaUtils.loadAttributes(this.apiContext, this.fileHandler);
+      this.fileHandler = await HttpFsMegaUtils.loadAttributes(this.apiContext, this.fileHandler, ctx);
     } catch (err) {
       if (HttpFsMegaUtils.RevErrors[err.message]) {
         const ne = MegaAsyncError.errBody(err.message, -HttpFsMegaUtils.RevErrors[err.message], undefined);

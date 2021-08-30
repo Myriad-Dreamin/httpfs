@@ -1,11 +1,11 @@
 import {URL} from 'url';
 import * as stream from 'stream';
 import {Readable} from 'stream';
-import HttpsProxyAgent from 'https-proxy-agent/dist/agent';
 import got, * as GotLib from 'got';
 import {RequestError} from 'got';
 import {HttpFsError} from '../../proto';
 import * as crypto from 'crypto';
+import {GotAction} from '../generic/got';
 
 const mega = require('megajs');
 
@@ -329,7 +329,9 @@ export class HttpFsMegaUtils {
   static Errors = Errors;
   static RevErrors = revErrors;
 
-  static async gotMegaReq<T extends any[]>(apiContext: MegaApiContext, qs: [string, string][], body: Record<string, any>): Promise<GotLib.Response<T>> {
+  static async gotMegaReq<T extends any[]>(apiContext: MegaApiContext, qs: [string, string][], body: Record<string, any>, options: {
+    proxy?: string;
+  }): Promise<GotLib.Response<T>> {
 
     const url = new URL(`https://g.api.mega.co.nz/cs`);
     url.searchParams.append('id', (apiContext.counterId++).toString());
@@ -341,13 +343,13 @@ export class HttpFsMegaUtils {
     for (const q of qs) {
       url.searchParams.append(q[0], q[1]);
     }
-    let res: GotLib.Response<T>;
+    let res: GotLib.Response<T | number>;
     try {
-      res = await got.post<T>({
+      res = await got.post<T | number>({
         url,
         json: body,
         responseType: 'json',
-        agent: proxyAgents,
+        agent: GotAction.getAgentOptionByProxy(options.proxy),
       });
     } catch (err) {
       if (err instanceof GotLib.RequestError) {
@@ -368,7 +370,7 @@ export class HttpFsMegaUtils {
       throw MegaAsyncError.errBody(`Response Error (${respBody}): ${Errors[-respBody]}`, respBody, res);
     }
 
-    return res;
+    return res as GotLib.Response<T>;
   }
 
   static gotMegaDownload(apiContext: MegaApiContext, file: MegaFileObject, options: {
@@ -377,6 +379,7 @@ export class HttpFsMegaUtils {
     end?: number;
     maxConnections?: number;
     forceHttps?: boolean;
+    proxy?: string;
   }): Readable {
 
     if (!options) options = {};
@@ -425,7 +428,7 @@ export class HttpFsMegaUtils {
       stream$$1.emit('error', new MegaAsyncError('Connection error: ' + err.message, err));
     }
 
-    HttpFsMegaUtils.gotMegaReq<[MegaFileInfoResponse]>(apiContext, _querystring, [req])
+    HttpFsMegaUtils.gotMegaReq<[MegaFileInfoResponse]>(apiContext, _querystring, [req], options)
       .then((response: GotLib.Response<[MegaFileInfoResponse]>) => {
         const body = response.body[0];
 
@@ -442,7 +445,7 @@ export class HttpFsMegaUtils {
 
         if (maxConnections === 1) {
           const r = got.stream(`${body.g}/${apiStart}-${end}`, {
-            agent: proxyAgents,
+            agent: GotAction.getAgentOptionByProxy(options.proxy),
           });
           r.on('error', handleConnectionErrors);
           r.on('response', handleMegaErrors);
@@ -466,7 +469,9 @@ export class HttpFsMegaUtils {
     return stream$$1;
   }
 
-  static async loadAttributes(apiContext: MegaApiContext, file: MegaFileObject): Promise<MegaFileObject> {
+  static async loadAttributes(apiContext: MegaApiContext, file: MegaFileObject, options: {
+    proxy?: string;
+  }): Promise<MegaFileObject> {
     const _querystring = [];
     let req: any;
     if (file.isDirectory) {
@@ -488,7 +493,7 @@ export class HttpFsMegaUtils {
       f: HttpFileResp[];
       at: string;
       s: number;
-    }]>(apiContext, _querystring, [req]);
+    }]>(apiContext, _querystring, [req], options);
     const body = res.body[0];
 
     if (file.isDirectory) {

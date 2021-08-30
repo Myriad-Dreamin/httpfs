@@ -356,6 +356,9 @@ export class HttpFsMegaUtils {
         throw err;
       }
     }
+    if (typeof res.body === 'number') {
+      throw MegaAsyncError.errBody(`Response Error (${res.body}): ${Errors[-res.body]}`, res.body, res);
+    }
     if (!Array.isArray(res.body)) {
       throw new MegaAsyncError('internal error: not array???');
     }

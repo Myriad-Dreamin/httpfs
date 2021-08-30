@@ -108,9 +108,9 @@ interface MegaFileInfoResponse {
 }
 
 export const MegaApiContextKey = Symbol('context');
+export const _MegaApi_parentKey = Symbol('parent');
 const LABEL_NAMES = ['', 'red', 'orange', 'yellow', 'green', 'blue', 'purple', 'grey'] as const;
 type megaLabelNames = typeof LABEL_NAMES;
-
 export interface MegaFileObject {
   [MegaApiContextKey]: MegaApiContext;
 
@@ -128,7 +128,7 @@ export interface MegaFileObject {
   timestamp?: number;
   attributes: Record<string, any>;
   children: MegaFileObject[];
-  parent: MegaFileObject;
+  [_MegaApi_parentKey]: MegaFileObject;
 }
 
 export interface MegaApiContext {
@@ -227,10 +227,103 @@ interface HttpFileResp {
   a?: any;
 }
 
-const proxyAgents = {
-  http: new HttpsProxyAgent('http://localhost:10809'),
-  https: new HttpsProxyAgent('http://localhost:10809'),
-};
+function d64(s: string): Buffer {
+  return Buffer.from(s, 'base64');
+}
+
+function formatKey(key: Buffer | string): Buffer {
+  return typeof key === 'string' ? d64(key) : key;
+} // URL Safe Base64 encode/decode
+
+function checkConstructorArgument(value: any): void {
+  // If a string was passed then check if it's not empty and
+  // contains only base64 valid characters
+  if (typeof value === 'string' && !/^[\w-]+$/.test(value)) {
+    throw Error(`Invalid argument: "${value}"`);
+  }
+}
+
+function unmergeKeyMac(key) {
+  const newKey = Buffer.alloc(32);
+  key.copy(newKey);
+
+  for (let i = 0; i < 16; i++) {
+    newKey.writeUInt8(newKey.readUInt8(i) ^ newKey.readUInt8(16 + i), i);
+  }
+
+  return newKey;
+}
+
+function getCipher(key: Buffer) {
+  return new AES(unmergeKeyMac(key).slice(0, 16));
+}
+
+function unpackAttributes(attrs: Buffer) {
+  // read until the first null byte
+  let end = 0;
+
+  while (end < attrs.length && attrs.readUInt8(end)) end++;
+
+  const head = attrs.slice(0, end).toString();
+  if (head.substr(0, 6) !== 'MEGA{"') return;
+
+  try {
+    return JSON.parse(head.substr(4));
+  } catch (e) {
+    throw new Error(`unpack failed: ${(e as unknown as Error)?.message}`);
+  }
+}
+
+function decryptAttributes(fileObj: MegaFileObject, aes: AES, at: string): void {
+  if (!fileObj.key) return;
+  const attributes = d64(at);
+  getCipher(fileObj.key).decryptCBC(attributes);
+  const unpackedAttributes = unpackAttributes(attributes);
+
+  if (unpackedAttributes) {
+    fileObj.attributes = unpackedAttributes;
+    fileObj.name = unpackedAttributes.n;
+    fileObj.label = LABEL_NAMES[unpackedAttributes.lbl || 0];
+    fileObj.favorited = !!unpackedAttributes.fav;
+  }
+
+  return;
+}
+
+function loadMetadata(ff: MegaFileObject, f: HttpFileResp, aes: AES) {
+  const parts = f.k.split(':');
+  ff.isDirectory = !!f.t;
+  ff.type = ff.isDirectory ? 1 : 0;
+  ff.key = formatKey(parts[parts.length - 1]);
+  ff.size = f.s || 0;
+  ff.timestamp = f.ts || 0;
+  ff.owner = f.u;
+  if (aes) {
+    aes.decryptECB(ff.key);
+    if (f.a) {
+      decryptAttributes(ff, aes, f.a);
+    }
+  }
+}
+
+function createFileFromHttpResp(f: HttpFileResp, aes: AES, apiContext?: MegaApiContext): MegaFileObject {
+  const ff: MegaFileObject = {
+    [MegaApiContextKey]: apiContext,
+  } as MegaFileObject;
+  loadMetadata(ff, f, aes);
+  return ff;
+}
+
+function createFileFromPartial(f: Partial<MegaFileObject>): MegaFileObject {
+  checkConstructorArgument(f.downloadId);
+  checkConstructorArgument(f.key);
+  checkConstructorArgument(f.loadedFile);
+  // nodeId: string;
+  f.type = f.isDirectory ? 1 : 0;
+  f.size = f.size || 0;
+  f.timestamp = f.timestamp || 0;
+  return f as MegaFileObject;
+}
 
 export class HttpFsMegaUtils {
   static Errors = Errors;
@@ -395,96 +488,6 @@ export class HttpFsMegaUtils {
     }]>(apiContext, _querystring, [req]);
     const body = res.body[0];
 
-    function d64(s: string): Buffer {
-      return Buffer.from(s, 'base64');
-    }
-
-    function formatKey(key: Buffer | string): Buffer {
-      return typeof key === 'string' ? d64(key) : key;
-    } // URL Safe Base64 encode/decode
-
-    function checkConstructorArgument(value: any): void {
-      // If a string was passed then check if it's not empty and
-      // contains only base64 valid characters
-      if (typeof value === 'string' && !/^[\w-]+$/.test(value)) {
-        throw Error(`Invalid argument: "${value}"`);
-      }
-    }
-
-    function unmergeKeyMac(key) {
-      const newKey = Buffer.alloc(32);
-      key.copy(newKey);
-
-      for (let i = 0; i < 16; i++) {
-        newKey.writeUInt8(newKey.readUInt8(i) ^ newKey.readUInt8(16 + i), i);
-      }
-
-      return newKey;
-    }
-
-    function getCipher(key: Buffer) {
-      return new AES(unmergeKeyMac(key).slice(0, 16));
-    }
-
-    function unpackAttributes(attrs: Buffer) {
-      // read until the first null byte
-      let end = 0;
-
-      while (end < attrs.length && attrs.readUInt8(end)) end++;
-
-      const head = attrs.slice(0, end).toString();
-      if (head.substr(0, 6) !== 'MEGA{"') return;
-
-      try {
-        return JSON.parse(head.substr(4));
-      } catch (e) {
-        throw new Error(`unpack failed: ${(e as unknown as Error)?.message}`);
-      }
-    }
-
-    function decryptAttributes(fileObj: MegaFileObject, aes: AES, at: string): void {
-      if (!fileObj.key) return;
-      const attributes = d64(at);
-      getCipher(fileObj.key).decryptCBC(attributes);
-      const unpackedAttributes = unpackAttributes(attributes);
-
-      if (unpackedAttributes) {
-        fileObj.attributes = unpackedAttributes;
-        fileObj.name = unpackedAttributes.n;
-        fileObj.label = LABEL_NAMES[unpackedAttributes.lbl || 0];
-        fileObj.favorited = !!unpackedAttributes.fav;
-      }
-
-      return;
-    }
-
-    function loadMetadata(ff: MegaFileObject, f: HttpFileResp, aes: AES) {
-      checkConstructorArgument(f.downloadId);
-      checkConstructorArgument(f.key);
-      checkConstructorArgument(f.loadedFile);
-      const parts = f.k.split(':');
-      ff.isDirectory = !!f.t;
-      ff.type = ff.isDirectory ? 1 : 0;// Cr
-      ff.key = formatKey(parts[parts.length - 1]);
-      ff.size = f.s || 0;
-      ff.timestamp = f.ts || 0;
-      ff.owner = f.u;
-      if (aes) {
-        aes.decryptECB(ff.key);
-        if (f.a) {
-          decryptAttributes(ff, aes, f.a);
-        }
-      }
-    }
-
-    function createFileFromHttpResp(f: HttpFileResp, aes: AES): MegaFileObject {
-      const ff: MegaFileObject = {
-        [MegaApiContextKey]: apiContext,
-      } as MegaFileObject;
-      loadMetadata(ff, f, aes);
-      return ff;
-    }
-
     if (file.isDirectory) {
       const filesMap: Record<string, MegaFileObject> = {};
       const nodes = body.f;
@@ -511,7 +514,7 @@ export class HttpFsMegaUtils {
           const fileObj = filesMap[child.h];
           if (!parent.children) parent.children = [];
           parent.children.push(fileObj);
-          fileObj.parent = parent;
+          fileObj[_MegaApi_parentKey] = parent;
         }
       }
 
@@ -539,5 +542,73 @@ export class HttpFsMegaUtils {
       }
     }
     return file;
+  }
+
+
+  static fromURL(urlText: string): MegaFileObject {
+    // Supported formats:
+    // Old format:
+    // https://mega.nz/#!file_handler
+    // https://mega.nz/#!file_handler!file_key
+    // https://mega.nz/#F!folder_handler
+    // https://mega.nz/#F!folder_handler!folder_key
+    // https://mega.nz/#F!folder_handler!folder_key!file_handler
+    // New format (2020):
+    // https://mega.nz/file/file_handler
+    // https://mega.nz/file/file_handler#file_key
+    // https://mega.nz/folder/folder_handler
+    // https://mega.nz/folder/folder_handler#folder_key
+    // https://mega.nz/folder/folder_handler#folder_key/file/file_handler
+
+
+    const megaUrl = new URL(urlText);
+
+    if (megaUrl.hostname !== 'mega.nz' && megaUrl.hostname !== 'mega.co.nz') {
+      throw Error('Invalid URL: wrong hostname');
+    }
+
+    if (!megaUrl.hash) throw Error('Invalid URL: no hash');
+
+    if (/\/(file|folder)\//.test(megaUrl.pathname)) {
+      // new format
+      const split = megaUrl.hash.substr(1).split('/file/');
+      const fileHandler = megaUrl.pathname.substring(megaUrl.pathname.lastIndexOf('/') + 1, megaUrl.pathname.length + 1);
+      const fileKey = split[0];
+      if (fileHandler && !fileKey || !fileHandler && fileKey) throw Error('Invalid URL: too few arguments');
+      return createFileFromPartial({
+        downloadId: fileHandler,
+        key: formatKey(fileKey),
+        isDirectory: megaUrl.pathname.indexOf('/folder/') >= 0,
+        loadedFile: split[1],
+      });
+    } else {
+      // old format
+      const split = megaUrl.hash.split('!');
+
+      if (split[0] !== '#' && split[0] !== '#F') {
+        throw Error('Invalid URL: format not recognized');
+      }
+
+      if (split.length <= 1) throw Error('Invalid URL: too few arguments');
+
+      if (split.length >= (split[0] === '#' ? 4 : 5)) {
+        throw Error('Invalid URL: too many arguments');
+      }
+
+      return createFileFromPartial({
+        downloadId: split[1],
+        key: formatKey(split[2]),
+        isDirectory: split[0] === '#F',
+        loadedFile: split[3]
+      });
+    }
+  }
+
+  static createApiContext(): MegaApiContext {
+    return {
+      keepalive: false,
+      counterId: Number.parseInt(Math.random().toString().substr(2, 10)),
+      gateway: `https://g.api.mega.co.nz/`,
+    };
   }
 }

@@ -21,20 +21,12 @@ export class MegaUrlAction implements UrlLoadRemoteAction, UrlReadStreamAction {
       if (this.childPath && this.childPath !== '/') {
         throw new HttpFsError('non-root node needs a fileHandler');
       }
-      const fileHandler = mega.file(this.url.toString());
-      fileHandler[MegaApiContextKey] = this.apiContext = fileHandler.api;
-      fileHandler.isDirectory = fileHandler.directory;
-      this.fileHandler = fileHandler;
+      this.fileHandler = HttpFsMegaUtils.fromURL(this.url.toString());
+    }
+    if (this.fileHandler[MegaApiContextKey]) {
+      this.apiContext = this.fileHandler[MegaApiContextKey];
     } else {
-      if (fileHandler[MegaApiContextKey]) {
-        this.apiContext = fileHandler[MegaApiContextKey];
-      } else {
-        this.apiContext = {
-          keepalive: false,
-          counterId: Number.parseInt(Math.random().toString().substr(2, 10)),
-          gateway: `https://g.api.mega.co.nz/`,
-        };
-      }
+      this.apiContext = this.fileHandler[MegaApiContextKey] = HttpFsMegaUtils.createApiContext();
     }
   }
 

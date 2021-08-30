@@ -3,13 +3,17 @@ import HttpsProxyAgent from 'https-proxy-agent/dist/agent';
 import * as GotLib from 'got';
 
 export class GotAction {
-  static getAgentOption(ctx: HttpVolumeApiContext): GotLib.Options['agent'] {
-    if (ctx?.proxy) {
+  static getAgentOptionByProxy(proxy: string): GotLib.Options['agent'] {
+    if (proxy) {
       return {
-        http: new HttpsProxyAgent(ctx.proxy),
-        https: new HttpsProxyAgent(ctx.proxy),
+        http: new HttpsProxyAgent(proxy),
+        https: new HttpsProxyAgent(proxy),
       }
     }
     return undefined;
+  }
+
+  static getAgentOption(ctx: HttpVolumeApiContext): GotLib.Options['agent'] {
+    return ctx ? GotAction.getAgentOptionByProxy(ctx.proxy) : undefined;
   }
 }

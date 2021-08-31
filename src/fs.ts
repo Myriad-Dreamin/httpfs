@@ -317,30 +317,38 @@ function isDir(d: IHttpDirent): d is (HttpDirInfo | HttpNDirInfo) {
   return d.type === 'dir';
 }
 
-function adaptLoadRemoteAction(volume: HttpVolume, action: HttpFsURLAction, optionRootName?: string): HttpFsURLAction {
-  const l = action.loadRemote;
-  action.loadRemote = function (): Promise<IHttpDirent> {
-    return l.call(this).then(dirent => {
-      if (isDir(dirent)) {
+const hAdapt = Symbol('hAdapt');
 
-        // adapt it if necessary
-        dirent.action = dirent.action.loadRemote === action.loadRemote ?
-          dirent.action : adaptLoadRemoteAction(volume, action, optionRootName);
-        return dirent;
+function adaptLoadRemoteAction(
+  volume: HttpVolume, action: HttpFsURLAction, optionRootName?: string): HttpFsURLAction {
+  return new Proxy(action, {
+    get(target: HttpFsURLAction, key: string | symbol, receiver: unknown) {
+      if (key !== hAdapt && key !== 'loadRemote') {
+        return Reflect.get(target, key, receiver);
       }
-      if (!dirent.name) {
-        dirent.name = optionRootName || 'nameless-file';
+      if (key === 'loadRemote') {
+        return function (ctx: HttpVolumeApiContext): Promise<IHttpDirent> {
+          return target.loadRemote(ctx).then(dirent => {
+            dirent.action = dirent.action[hAdapt] ? dirent.action : volume.adaptRootAction(action);
+            if (isDir(dirent)) {
+              return dirent;
+            }
+            if (!dirent.name) {
+              dirent.name = optionRootName || 'nameless-file';
+            }
+            return {
+              type: 'dir',
+              name: '',
+              loaded: true,
+              action,
+              children: [dirent],
+            };
+          });
+        };
       }
-      return {
-        type: 'dir',
-        name: '',
-        loaded: true,
-        action,
-        children: [dirent],
-      }
-    });
-  }
-  return action;
+      return true;
+    },
+  });
 }
 
 const contextKey = Symbol('context');
